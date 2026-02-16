@@ -8,6 +8,10 @@ const authRoutes = require("./src/routes/authRoutes");
 const jobRoutes = require("./src/routes/jobRoutes");
 const leadRoutes = require("./src/routes/leadRoutes");
 const exportRoutes = require("./src/routes/exportRoutes");
+const sseRoutes = require("./src/routes/sseRoutes");
+
+// Import Worker
+const scrapingWorker = require("./src/workers/scrapingWorker");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -29,6 +33,7 @@ app.get("/", (req, res) => {
       jobs: "/api/jobs",
       leads: "/api/leads",
       export: "/api/export",
+      sse: "/api/sse",
     },
   });
 });
@@ -38,6 +43,10 @@ app.use("/api/auth", authRoutes);
 app.use("/api/jobs", jobRoutes);
 app.use("/api/leads", leadRoutes);
 app.use("/api/export", exportRoutes);
+app.use("/api/sse", sseRoutes);
+
+// Worker Status
+console.log("🔄 Scraping worker started and listening for jobs...");
 
 // Start Server
 app.listen(PORT, () => {

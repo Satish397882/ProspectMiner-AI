@@ -18,4 +18,7 @@ router.get("/", jobController.getJobHistory);
 // DELETE /api/jobs/:jobId - Delete job
 router.delete("/:jobId", jobController.deleteJob);
 
+// PUT /api/jobs/:jobId/cancel - Cancel job
+router.put("/:jobId/cancel", jobController.cancelJob);
+
 module.exports = router;

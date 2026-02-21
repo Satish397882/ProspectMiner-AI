@@ -1,13 +1,23 @@
-from fastapi import APIRouter, BackgroundTasks
-from app.workers.job_runner import run_scrape_job, JOB_STATUS
+from fastapi import APIRouter
+from pydantic import BaseModel
+from app.workers.job_runner import run_scrape_job_sync
 
 router = APIRouter(prefix="/scrape", tags=["Scraping"])
 
+class ScrapeRequest(BaseModel):
+    keyword: str
+    location: str
+    count: int = 10
+
 @router.post("/")
-def start_scrape(query: str, bg: BackgroundTasks):
-    job_id = run_scrape_job(query, bg)
-    return {"job_id": job_id}
+def start_scrape(request: ScrapeRequest):
+    query = f"{request.keyword} in {request.location}"
+    
+    # Run synchronously (no background task)
+    leads = run_scrape_job_sync(query, count=request.count)
+    
+    return {"job_id": "sync", "leads": leads}
 
 @router.get("/{job_id}")
 def get_status(job_id: str):
-    return JOB_STATUS.get(job_id, {"status": "unknown"})
+    return {"status": "completed"}

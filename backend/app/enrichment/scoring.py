@@ -8,7 +8,7 @@ def score_lead(lead):
         score += 30
 
     if score >= 70:
-        return "Hot"
+        return "hot"  # lowercase
     if score >= 40:
-        return "Warm"
-    return "Cold"
+        return "warm"  # lowercase
+    return "cold"  # lowercase

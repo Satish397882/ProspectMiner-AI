@@ -3,6 +3,7 @@ node_modules/
 
 # Environment variables
 .env
+.env.*
 
 # Logs
 *.log
@@ -20,6 +21,7 @@ Thumbs.db
 dist/
 build/
 
-# Cache
-.cache/
+# Python
 __pycache__/
+*.pyc
+venv/

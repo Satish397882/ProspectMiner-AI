@@ -5,16 +5,14 @@ from app.api.auth import router as auth_router
 
 app = FastAPI(title="ProspectMiner AI")
 
-# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include routers
 app.include_router(auth_router)
 app.include_router(scrape_router)
 

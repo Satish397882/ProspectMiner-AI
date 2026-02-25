@@ -7,6 +7,7 @@ router = APIRouter(prefix="/scrape", tags=["Scraping"])
 class ScrapeRequest(BaseModel):
     keyword: str
     location: str
+    leads: int = 10
     count: int = 10
 
 @router.post("/")

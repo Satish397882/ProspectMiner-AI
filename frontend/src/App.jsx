@@ -1,18 +1,22 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom"
-import Navbar from "./components/Navbar"
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import Navbar from "./components/Navbar";
 
-import Login from "./pages/Login"
-import Signup from "./pages/Signup"
-import Dashboard from "./pages/Dashboard"
-import CreateJob from "./pages/CreateJob"
-import JobHistory from "./pages/JobHistory"
-import JobProgress from "./pages/JobProgress"
-import ProtectedRoute from "./components/ProtectedRoute"
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
+import Dashboard from "./pages/Dashboard";
+import CreateJob from "./pages/CreateJob";
+import JobHistory from "./pages/JobHistory";
+import JobProgress from "./pages/JobProgress";
+import ProtectedRoute from "./components/ProtectedRoute";
 
-export default function App() {
+function AppContent() {
+  const location = useLocation();
+  const hideNavbar =
+    location.pathname === "/login" || location.pathname === "/signup";
+
   return (
-    <BrowserRouter>
-      <Navbar />
+    <>
+      {!hideNavbar && <Navbar />}
 
       <Routes>
         {/* PUBLIC */}
@@ -56,6 +60,14 @@ export default function App() {
           }
         />
       </Routes>
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
     </BrowserRouter>
-  )
+  );
 }

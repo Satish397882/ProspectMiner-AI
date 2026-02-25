@@ -1,44 +1,104 @@
-import { useState } from "react"
-import api from "../api/axios"
-import { useNavigate } from "react-router-dom"
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
+import "../styles/auth.css";
 
-export default function Login() {
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const navigate = useNavigate()
+const Login = () => {
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const navigate = useNavigate();
 
-  const submit = async e => {
-    e.preventDefault()
-    const res = await api.post("/auth/login", { email, password })
-    localStorage.setItem("token", res.data.token)
-    navigate("/")
-  }
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+
+    try {
+      const endpoint = isLogin ? "/api/auth/login" : "/api/auth/register";
+      const payload = isLogin ? { email, password } : { name, email, password };
+
+      const response = await axios.post(
+        `http://localhost:8000${endpoint}`,
+        payload,
+      );
+
+      if (response.data.token) {
+        localStorage.setItem("token", response.data.token);
+        localStorage.setItem("user", JSON.stringify(response.data.user));
+        setSuccess(isLogin ? "Login successful!" : "Registration successful!");
+        setTimeout(() => navigate("/dashboard"), 1000);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || "Something went wrong!");
+    }
+  };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <form className="bg-white p-8 rounded-xl shadow-lg w-96">
-        <h2 className="text-2xl font-bold mb-6">Login</h2>
+    <div className="welcome-container">
+      <div className="welcome-box">
+        <div className="welcome-left">
+          <h2>Login</h2>
+          <form onSubmit={handleSubmit}>
+            {!isLogin && (
+              <div className="welcome-input-group">
+                <i className="fas fa-user"></i>
+                <input
+                  type="text"
+                  placeholder="Name"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
+            )}
 
-        <input
-          className="w-full p-3 mb-4 border rounded"
-          placeholder="Email"
-          onChange={e => setEmail(e.target.value)}
-        />
+            <div className="welcome-input-group">
+              <i className="fas fa-user"></i>
+              <input
+                type="email"
+                placeholder={isLogin ? "Username" : "Email"}
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
 
-        <input
-          type="password"
-          className="w-full p-3 mb-4 border rounded"
-          placeholder="Password"
-          onChange={e => setPassword(e.target.value)}
-        />
+            <div className="welcome-input-group">
+              <i className="fas fa-lock"></i>
+              <input
+                type="password"
+                placeholder="Password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
 
-        <button
-          onClick={submit}
-          className="w-full bg-black text-white py-3 rounded hover:bg-gray-800"
-        >
-          Login
-        </button>
-      </form>
+            {error && <div className="welcome-error">{error}</div>}
+            {success && <div className="welcome-success">{success}</div>}
+
+            <button type="submit" className="welcome-btn">
+              {isLogin ? "Login" : "Sign Up"}
+            </button>
+
+            <div className="welcome-toggle">
+              {isLogin ? "Don't have an account?" : "Already have an account?"}
+              <button type="button" onClick={() => setIsLogin(!isLogin)}>
+                {isLogin ? "Sign Up" : "Login"}
+              </button>
+            </div>
+          </form>
+        </div>
+        <div className="welcome-right">
+          <h1>WELCOME</h1>
+        </div>
+      </div>
     </div>
-  )
-}
+  );
+};
+
+export default Login;

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import axios from "axios";
 import "../styles/auth.css";
 
@@ -11,6 +12,7 @@ const Login = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -28,12 +30,12 @@ const Login = () => {
 
       if (response.data.token) {
         localStorage.setItem("token", response.data.token);
-        localStorage.setItem("user", JSON.stringify(response.data.user));
+        login(response.data.user);
         setSuccess(isLogin ? "Login successful!" : "Registration successful!");
-        setTimeout(() => navigate("/dashboard"), 1000);
+        setTimeout(() => navigate("/"), 1000);
       }
     } catch (err) {
-      setError(err.response?.data?.message || "Something went wrong!");
+      setError(err.response?.data?.detail || "Something went wrong!");
     }
   };
 
@@ -41,7 +43,7 @@ const Login = () => {
     <div className="welcome-container">
       <div className="welcome-box">
         <div className="welcome-left">
-          <h2>Login</h2>
+          <h2>{isLogin ? "Login" : "Sign Up"}</h2>
           <form onSubmit={handleSubmit}>
             {!isLogin && (
               <div className="welcome-input-group">
@@ -60,7 +62,7 @@ const Login = () => {
               <i className="fas fa-user"></i>
               <input
                 type="email"
-                placeholder={isLogin ? "Username" : "Email"}
+                placeholder="Email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}

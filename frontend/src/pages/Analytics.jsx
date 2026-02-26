@@ -163,7 +163,6 @@ const ChartCard = ({ title, children }) => (
         color: "#f1f5f9",
         fontSize: "15px",
         fontWeight: "600",
-        marginBottom: "20px",
         margin: "0 0 20px 0",
       }}
     >
@@ -213,7 +212,10 @@ export default function Analytics() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch("http://localhost:8000/scrape/analytics")
+    const token = localStorage.getItem("token");
+    fetch("http://localhost:8000/scrape/analytics", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((r) => r.json())
       .then((d) => {
         setData(d);
@@ -238,7 +240,6 @@ export default function Analytics() {
         </div>
       </div>
     );
-
   if (!data)
     return (
       <div
@@ -266,23 +267,13 @@ export default function Analytics() {
   return (
     <div style={{ minHeight: "100vh", background: "#0f172a" }}>
       <style>{`
-        @media (max-width: 768px) {
-          .nav-links { display: none !important; }
-          .hamburger { display: block !important; }
-          .stats-grid { grid-template-columns: 1fr 1fr !important; }
-          .charts-grid { grid-template-columns: 1fr !important; }
-        }
-        @media (max-width: 480px) {
-          .stats-grid { grid-template-columns: 1fr !important; }
-        }
+        @media (max-width: 768px) { .nav-links { display: none !important; } .hamburger { display: block !important; } .stats-grid { grid-template-columns: 1fr 1fr !important; } .charts-grid { grid-template-columns: 1fr !important; } }
+        @media (max-width: 480px) { .stats-grid { grid-template-columns: 1fr !important; } }
       `}</style>
-
       <Navbar menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
-
       <div
         style={{ maxWidth: "1200px", margin: "0 auto", padding: "32px 24px" }}
       >
-        {/* Header */}
         <div style={{ marginBottom: "32px" }}>
           <h1
             style={{
@@ -299,7 +290,6 @@ export default function Analytics() {
           </p>
         </div>
 
-        {/* Summary Stats */}
         <div
           className="stats-grid"
           style={{
@@ -335,7 +325,6 @@ export default function Analytics() {
           />
         </div>
 
-        {/* Charts Row 1 */}
         <div
           className="charts-grid"
           style={{
@@ -345,7 +334,6 @@ export default function Analytics() {
             marginBottom: "20px",
           }}
         >
-          {/* Jobs Over Time */}
           <ChartCard title="📈 Activity (Last 7 Days)">
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={data.jobs_over_time}>
@@ -383,7 +371,6 @@ export default function Analytics() {
             </ResponsiveContainer>
           </ChartCard>
 
-          {/* Donut Chart */}
           <ChartCard title="🍩 Job Status Breakdown">
             <ResponsiveContainer width="100%" height={220}>
               <PieChart>
@@ -413,7 +400,6 @@ export default function Analytics() {
           </ChartCard>
         </div>
 
-        {/* Charts Row 2 */}
         <div
           className="charts-grid"
           style={{
@@ -422,7 +408,6 @@ export default function Analytics() {
             gap: "20px",
           }}
         >
-          {/* Leads Per Job */}
           <ChartCard title="📊 Leads Per Job">
             {data.leads_per_job.length === 0 ? (
               <div
@@ -461,7 +446,6 @@ export default function Analytics() {
             )}
           </ChartCard>
 
-          {/* Top Keywords */}
           <ChartCard title="🏆 Top Keywords">
             {data.top_keywords.length === 0 ? (
               <div

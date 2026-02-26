@@ -17,7 +17,10 @@ export default function JobHistory() {
 
   const fetchHistory = async () => {
     try {
-      const res = await fetch("http://localhost:8000/scrape/history");
+      const token = localStorage.getItem("token");
+      const res = await fetch("http://localhost:8000/scrape/history", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
       setJobs(data.jobs || []);
       setLoading(false);
@@ -29,8 +32,10 @@ export default function JobHistory() {
   const handleDelete = async (jobId) => {
     setDeletingId(jobId);
     try {
+      const token = localStorage.getItem("token");
       await fetch(`http://localhost:8000/scrape/${jobId}`, {
         method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
       });
       setJobs((prev) => prev.filter((j) => j.job_id !== jobId));
     } catch {
@@ -62,7 +67,6 @@ export default function JobHistory() {
     return status;
   };
 
-  // Filter + Search
   const filteredJobs = jobs.filter((job) => {
     const matchSearch =
       (job.keyword || "").toLowerCase().includes(search.toLowerCase()) ||
@@ -73,7 +77,6 @@ export default function JobHistory() {
 
   return (
     <div className="min-h-screen bg-[#0f1221]">
-      {/* Navbar */}
       <nav className="bg-[#1a1f3a] px-4 md:px-8 py-4 flex justify-between items-center shadow-lg">
         <h1
           className="text-xl md:text-2xl font-bold text-white cursor-pointer"
@@ -99,6 +102,12 @@ export default function JobHistory() {
             className="text-white font-semibold border-b-2 border-blue-500 pb-1"
           >
             History
+          </button>
+          <button
+            onClick={() => navigate("/analytics")}
+            className="text-gray-300 hover:text-white transition"
+          >
+            Analytics
           </button>
           <button
             onClick={handleLogout}
@@ -145,6 +154,15 @@ export default function JobHistory() {
             History
           </button>
           <button
+            onClick={() => {
+              navigate("/analytics");
+              setMenuOpen(false);
+            }}
+            className="text-gray-300 text-left py-2 border-b border-gray-700"
+          >
+            Analytics
+          </button>
+          <button
             onClick={handleLogout}
             className="bg-red-500 text-white py-2 rounded-lg mt-2"
           >
@@ -154,7 +172,6 @@ export default function JobHistory() {
       )}
 
       <div className="p-4 md:p-8 max-w-6xl mx-auto">
-        {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <div>
             <h2 className="text-2xl md:text-4xl font-bold text-white">
@@ -180,7 +197,6 @@ export default function JobHistory() {
           </div>
         </div>
 
-        {/* Search + Filter Bar */}
         {!loading && jobs.length > 0 && (
           <div className="flex flex-col sm:flex-row gap-3 mb-6">
             <input

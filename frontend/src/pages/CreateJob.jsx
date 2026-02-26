@@ -21,9 +21,13 @@ export default function CreateJob() {
     if (!validate()) return;
     setLoading(true);
     try {
+      const token = localStorage.getItem("token");
       const res = await fetch("http://localhost:8000/scrape/", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(form),
       });
       const data = await res.json();
@@ -76,6 +80,12 @@ export default function CreateJob() {
             History
           </button>
           <button
+            onClick={() => navigate("/analytics")}
+            className="text-gray-300 hover:text-white transition"
+          >
+            Analytics
+          </button>
+          <button
             onClick={handleLogout}
             className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition"
           >
@@ -118,6 +128,15 @@ export default function CreateJob() {
             className="text-gray-300 text-left py-2 border-b border-gray-700"
           >
             History
+          </button>
+          <button
+            onClick={() => {
+              navigate("/analytics");
+              setMenuOpen(false);
+            }}
+            className="text-gray-300 text-left py-2 border-b border-gray-700"
+          >
+            Analytics
           </button>
           <button
             onClick={handleLogout}

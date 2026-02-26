@@ -8,6 +8,8 @@ export default function JobProgress() {
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("connecting");
 
+  const getToken = () => localStorage.getItem("token");
+
   useEffect(() => {
     let eventSource = null;
     let fallbackTimer = null;
@@ -17,7 +19,9 @@ export default function JobProgress() {
     }, 2000);
 
     try {
-      const url = `http://localhost:8000/scrape/${jobId}/stream`;
+      const token = getToken();
+      // SSE ke saath token query param mein bhejte hain
+      const url = `http://localhost:8000/scrape/${jobId}/stream?token=${token}`;
       eventSource = new EventSource(url);
 
       eventSource.onopen = () => {
@@ -53,7 +57,12 @@ export default function JobProgress() {
 
   const fetchLeads = async () => {
     try {
-      const res = await fetch(`http://localhost:8000/scrape/${jobId}`);
+      const token = getToken();
+      const res = await fetch(`http://localhost:8000/scrape/${jobId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       if (!res.ok) {
         setStatus("error");
         return;
@@ -163,7 +172,6 @@ export default function JobProgress() {
                 </p>
               </div>
             </div>
-            {/* ✅ Export CSV Button */}
             <button
               onClick={exportCSV}
               className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-xl transition font-semibold flex items-center gap-2 shadow-lg"

@@ -18,7 +18,10 @@ export default function Dashboard() {
 
   const fetchStats = async () => {
     try {
-      const res = await fetch("http://localhost:8000/scrape/stats");
+      const token = localStorage.getItem("token");
+      const res = await fetch("http://localhost:8000/scrape/stats", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
       setStats(data);
       setLoading(false);
@@ -147,7 +150,6 @@ export default function Dashboard() {
                 Start scraping leads from Google Maps
               </p>
             </div>
-
             <div
               className="bg-gradient-to-br from-purple-500 to-purple-700 rounded-2xl p-6 md:p-8 shadow-xl cursor-pointer transform hover:scale-105 active:scale-95 transition"
               onClick={() => navigate("/history")}
@@ -160,7 +162,6 @@ export default function Dashboard() {
                 View all your previous scraping jobs
               </p>
             </div>
-
             <div
               className="bg-gradient-to-br from-green-500 to-green-700 rounded-2xl p-6 md:p-8 shadow-xl cursor-pointer transform hover:scale-105 active:scale-95 transition sm:col-span-2 md:col-span-1"
               onClick={() => navigate("/analytics")}

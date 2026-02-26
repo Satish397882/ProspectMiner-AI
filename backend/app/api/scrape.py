@@ -16,6 +16,10 @@ router = APIRouter(prefix="/scrape", tags=["Scraping"])
 SECRET_KEY = os.getenv("JWT_SECRET", "navya_jain_prospectminer_2025_secret_xyz123")
 ALGORITHM = "HS256"
 
+# ⚡ Threading mode permanently ON (No Redis/Celery needed)
+CELERY_AVAILABLE = False
+print("⚡ Threading mode enabled - No queue system needed")
+
 
 def get_user_id_from_request(request: Request) -> str | None:
     auth = request.headers.get("Authorization", "")
@@ -71,11 +75,22 @@ def start_scrape(request: ScrapeRequest, req: Request):
         "created_at": datetime.utcnow().isoformat(),
         "user_id": user_id,
         "cancelled": False,
+        "queue_type": "threading",
     }
+
+    # Start scraping in background thread
     thread = threading.Thread(target=run_scrape_job_sync, args=(query, request.leads, job_id))
     thread.daemon = True
     thread.start()
-    return {"job_id": job_id, "status": "started"}
+    print(f"🧵 [Threading] Job {job_id} started")
+
+    return {"job_id": job_id, "status": "started", "queue_type": "threading"}
+
+
+@router.get("/queue/status")
+def get_queue_status():
+    """Threading mode status"""
+    return {"celery_available": False, "message": "Using threading mode"}
 
 
 @router.get("/stats")
@@ -99,7 +114,7 @@ def get_job_stats(req: Request):
         if job_data.get("status") == "completed":
             completed_jobs += 1
             total_leads += len(job_data.get("leads", []))
-        elif job_data.get("status") in ["running", "scraping", "pending"]:
+        elif job_data.get("status") in ["running", "scraping", "pending", "queued"]:
             active_jobs += 1
 
     total_jobs = len(all_jobs)
@@ -128,7 +143,6 @@ def get_analytics(req: Request):
         print(f"[ANALYTICS DB ERROR] {e}")
 
     jobs = list(all_jobs_dict.values())
-
     leads_per_job = []
     for job_data in list(all_jobs_dict.values())[-8:]:
         keyword = job_data.get("keyword", "Unknown")
@@ -161,7 +175,7 @@ def get_analytics(req: Request):
 
     completed = sum(1 for j in jobs if j.get("status") == "completed")
     failed = sum(1 for j in jobs if j.get("status") in ["failed", "error"])
-    running = sum(1 for j in jobs if j.get("status") in ["running", "scraping", "pending"])
+    running = sum(1 for j in jobs if j.get("status") in ["running", "scraping", "pending", "queued"])
     cancelled = sum(1 for j in jobs if j.get("status") == "cancelled")
     donut_data = []
     if completed: donut_data.append({"name": "Completed", "value": completed, "color": "#10b981"})
@@ -211,6 +225,7 @@ def get_job_history(req: Request):
             "leads_count": len(job_data.get("leads", [])),
             "requested_leads": job_data.get("requested_leads", 0),
             "created_at": job_data.get("created_at", ""),
+            "queue_type": job_data.get("queue_type", "threading"),
         })
 
     try:
@@ -227,6 +242,7 @@ def get_job_history(req: Request):
                 "leads_count": len(job_data.get("leads", [])),
                 "requested_leads": job_data.get("requested_leads", 0),
                 "created_at": str(job_data.get("created_at", "")),
+                "queue_type": job_data.get("queue_type", "threading"),
             })
     except Exception as e:
         print(f"[DB ERROR] History load failed: {e}")
@@ -243,7 +259,7 @@ def cancel_job(job_id: str, req: Request):
         raise HTTPException(status_code=404, detail="Job not found")
     if job.get("user_id") != user_id:
         raise HTTPException(status_code=403, detail="Not authorized")
-    if job.get("status") not in ["running", "scraping", "pending"]:
+    if job.get("status") not in ["running", "scraping", "pending", "queued"]:
         raise HTTPException(status_code=400, detail="Job is not running")
 
     JOB_STATUS[job_id]["cancelled"] = True

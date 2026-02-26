@@ -70,6 +70,9 @@ def delete_job_from_db(job_id: str):
 
 
 def run_scrape_job_sync(query: str, count: int = 10, job_id: str = None):
+    """
+    Threading fallback - Celery na ho to ye use hoga
+    """
     print(f"🔵 Starting scrape: {query}, count: {count}")
 
     if job_id:
@@ -81,14 +84,17 @@ def run_scrape_job_sync(query: str, count: int = 10, job_id: str = None):
         JOB_STATUS[job_id]["progress"] = 20
         save_job(job_id, JOB_STATUS[job_id])
 
-    # ✅ job_id aur JOB_STATUS pass karo taaki live update ho
-    leads = scrape_google_maps(query, max_results=count, job_id=job_id, job_status=JOB_STATUS)
+    leads = scrape_google_maps(
+        query,
+        max_results=count,
+        job_id=job_id,
+        job_status=JOB_STATUS
+    )
     print(f"✅ Scraped {len(leads)} leads")
 
     if job_id and job_id in JOB_STATUS:
-        # Check if cancelled
         if JOB_STATUS[job_id].get("cancelled"):
-            print(f"⛔ Job {job_id} was cancelled, saving partial results")
+            print(f"⛔ Job {job_id} was cancelled")
             JOB_STATUS[job_id]["leads"] = leads
             save_job(job_id, JOB_STATUS[job_id])
             return leads

@@ -31,13 +31,13 @@ def scrape_google_maps(query: str, max_results: int = 10, job_id: str = None, jo
             print(f"🔍 Searching: {search_url}")
             page.goto(search_url, wait_until="domcontentloaded", timeout=60000)
             print("✅ Page loaded!")
-            time.sleep(3)
+            time.sleep(1)  # ⚡ REDUCED: 3 → 1 second
 
             try:
                 accept_btn = page.query_selector('button[aria-label*="Accept"]')
                 if accept_btn:
                     accept_btn.click()
-                    time.sleep(1)
+                    time.sleep(0.5)  # ⚡ REDUCED: 1 → 0.5 second
             except:
                 pass
 
@@ -77,7 +77,7 @@ def scrape_google_maps(query: str, max_results: int = 10, job_id: str = None, jo
                 except:
                     page.evaluate("window.scrollBy(0, 1500)")
 
-                time.sleep(2)
+                time.sleep(1)  # ⚡ REDUCED: 2 → 1 second
                 scroll_attempts += 1
 
             listing_urls = listing_urls[:max_results]
@@ -94,7 +94,7 @@ def scrape_google_maps(query: str, max_results: int = 10, job_id: str = None, jo
 
                 try:
                     page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                    time.sleep(2.5)
+                    time.sleep(1.5)  # ⚡ REDUCED: 2.5 → 1.5 seconds
 
                     lead = extract_lead_data(page)
 

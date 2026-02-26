@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import AnimatedBackground from "../components/AnimatedBackground";
 
 export default function Dashboard() {
@@ -12,12 +12,20 @@ export default function Dashboard() {
   });
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const intervalRef = useRef(null);
 
   useEffect(() => {
     fetchStats();
+    // Auto-refresh har 5 seconds (jab active jobs hon)
+    intervalRef.current = setInterval(() => {
+      fetchStats(true); // silent refresh
+    }, 5000);
+
+    return () => clearInterval(intervalRef.current);
   }, []);
 
-  const fetchStats = async () => {
+  const fetchStats = async (silent = false) => {
     try {
       const token = localStorage.getItem("token");
       const res = await fetch("http://localhost:8000/scrape/stats", {
@@ -25,9 +33,10 @@ export default function Dashboard() {
       });
       const data = await res.json();
       setStats(data);
-      setLoading(false);
+      setLastUpdated(new Date());
+      if (!silent) setLoading(false);
     } catch {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -188,16 +197,39 @@ export default function Dashboard() {
 
           <div className="bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl p-4 md:p-8 shadow-xl border border-white/5">
             <div className="flex justify-between items-center mb-4 md:mb-6">
-              <h3 className="text-xl md:text-2xl font-bold text-white">
-                Quick Stats
-              </h3>
-              <button
-                onClick={fetchStats}
-                className="text-sm bg-blue-500 hover:bg-blue-600 text-white px-3 md:px-4 py-2 rounded-lg transition"
-              >
-                🔄 Refresh
-              </button>
+              <div>
+                <h3 className="text-xl md:text-2xl font-bold text-white">
+                  Quick Stats
+                </h3>
+                {lastUpdated && (
+                  <p className="text-gray-500 text-xs mt-1">
+                    🔄 Auto-refreshing • Last updated:{" "}
+                    {lastUpdated.toLocaleTimeString()}
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                {/* Active jobs pulse indicator */}
+                {stats.active_jobs > 0 && (
+                  <div className="flex items-center gap-2 bg-blue-500/20 border border-blue-500/30 px-3 py-1.5 rounded-full">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                    </span>
+                    <span className="text-blue-400 text-xs font-medium">
+                      {stats.active_jobs} Running
+                    </span>
+                  </div>
+                )}
+                <button
+                  onClick={() => fetchStats()}
+                  className="text-sm bg-blue-500 hover:bg-blue-600 text-white px-3 md:px-4 py-2 rounded-lg transition"
+                >
+                  🔄 Refresh
+                </button>
+              </div>
             </div>
+
             {loading ? (
               <div className="grid grid-cols-3 gap-3">
                 {[1, 2, 3].map((i) => (
@@ -209,13 +241,23 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-3 md:gap-6">
-                <div className="text-center bg-[#0f1221]/80 p-3 md:p-6 rounded-xl border border-white/5">
+                <div className="text-center bg-[#0f1221]/80 p-3 md:p-6 rounded-xl border border-white/5 relative overflow-hidden">
+                  {stats.active_jobs > 0 && (
+                    <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-blue-500 to-purple-500 animate-pulse" />
+                  )}
                   <p className="text-gray-400 text-xs md:text-sm mb-1">
                     Active Jobs
                   </p>
-                  <p className="text-white text-2xl md:text-4xl font-bold">
+                  <p
+                    className={`text-2xl md:text-4xl font-bold ${stats.active_jobs > 0 ? "text-blue-400" : "text-white"}`}
+                  >
                     {stats.active_jobs}
                   </p>
+                  {stats.active_jobs > 0 && (
+                    <p className="text-blue-400 text-xs mt-1 animate-pulse">
+                      ● Live
+                    </p>
+                  )}
                 </div>
                 <div className="text-center bg-[#0f1221]/80 p-3 md:p-6 rounded-xl border border-white/5">
                   <p className="text-gray-400 text-xs md:text-sm mb-1">
@@ -233,6 +275,20 @@ export default function Dashboard() {
                     {stats.success_rate}%
                   </p>
                 </div>
+              </div>
+            )}
+
+            {/* Active jobs quick view */}
+            {stats.active_jobs > 0 && (
+              <div className="mt-4 pt-4 border-t border-white/5">
+                <button
+                  onClick={() => navigate("/history")}
+                  className="w-full text-center text-blue-400 hover:text-blue-300 text-sm transition flex items-center justify-center gap-2"
+                >
+                  <span className="animate-pulse">●</span>
+                  View {stats.active_jobs} active job
+                  {stats.active_jobs > 1 ? "s" : ""} in History →
+                </button>
               </div>
             )}
           </div>

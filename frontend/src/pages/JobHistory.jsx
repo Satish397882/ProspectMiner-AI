@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import AnimatedBackground from "../components/AnimatedBackground";
 
@@ -11,12 +11,20 @@ export default function JobHistory() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [deletingId, setDeletingId] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [cancellingId, setCancellingId] = useState(null);
+  const [retryingId, setRetryingId] = useState(null);
+  const intervalRef = useRef(null);
 
   useEffect(() => {
     fetchHistory();
+    // Auto-poll har 3 seconds for live progress
+    intervalRef.current = setInterval(() => {
+      fetchHistory(true); // silent
+    }, 3000);
+    return () => clearInterval(intervalRef.current);
   }, []);
 
-  const fetchHistory = async () => {
+  const fetchHistory = async (silent = false) => {
     try {
       const token = localStorage.getItem("token");
       const res = await fetch("http://localhost:8000/scrape/history", {
@@ -24,9 +32,9 @@ export default function JobHistory() {
       });
       const data = await res.json();
       setJobs(data.jobs || []);
-      setLoading(false);
+      if (!silent) setLoading(false);
     } catch {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -46,6 +54,52 @@ export default function JobHistory() {
     setConfirmDelete(null);
   };
 
+  const handleCancel = async (jobId) => {
+    setCancellingId(jobId);
+    try {
+      const token = localStorage.getItem("token");
+      await fetch(`http://localhost:8000/scrape/${jobId}/cancel`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      // Optimistic update
+      setJobs((prev) =>
+        prev.map((j) =>
+          j.job_id === jobId
+            ? { ...j, status: "cancelled", progress: j.progress }
+            : j,
+        ),
+      );
+    } catch {
+      alert("Failed to cancel job");
+    }
+    setCancellingId(null);
+  };
+
+  const handleRetry = async (job) => {
+    setRetryingId(job.job_id);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("http://localhost:8000/scrape/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          keyword: job.keyword,
+          location: job.location,
+          leads: job.requested_leads || 20,
+        }),
+      });
+      const data = await res.json();
+      navigate(`/job/${data.job_id}`);
+    } catch {
+      alert("Failed to retry job");
+    }
+    setRetryingId(null);
+  };
+
   const handleLogout = () => {
     localStorage.removeItem("token");
     navigate("/login");
@@ -56,7 +110,9 @@ export default function JobHistory() {
       return "bg-green-500/20 text-green-400 border border-green-500/30";
     if (status === "running" || status === "scraping")
       return "bg-blue-500/20 text-blue-400 border border-blue-500/30";
-    if (status === "error")
+    if (status === "cancelled")
+      return "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30";
+    if (status === "failed" || status === "error")
       return "bg-red-500/20 text-red-400 border border-red-500/30";
     return "bg-gray-500/20 text-gray-400 border border-gray-500/30";
   };
@@ -64,15 +120,28 @@ export default function JobHistory() {
   const getStatusText = (status) => {
     if (status === "completed") return "✅ Completed";
     if (status === "running" || status === "scraping") return "⏳ Running";
-    if (status === "error") return "❌ Failed";
+    if (status === "cancelled") return "⛔ Cancelled";
+    if (status === "failed" || status === "error") return "❌ Failed";
     return status;
   };
+
+  const isRunning = (status) =>
+    status === "running" || status === "scraping" || status === "pending";
+
+  const isFailed = (status) =>
+    status === "failed" || status === "error" || status === "cancelled";
+
+  const hasActiveJobs = jobs.some((j) => isRunning(j.status));
 
   const filteredJobs = jobs.filter((job) => {
     const matchSearch =
       (job.keyword || "").toLowerCase().includes(search.toLowerCase()) ||
       (job.location || "").toLowerCase().includes(search.toLowerCase());
-    const matchStatus = filterStatus === "all" || job.status === filterStatus;
+    const matchStatus =
+      filterStatus === "all" ||
+      (filterStatus === "running"
+        ? isRunning(job.status)
+        : job.status === filterStatus);
     return matchSearch && matchStatus;
   });
 
@@ -182,11 +251,16 @@ export default function JobHistory() {
             </h2>
             <p className="text-gray-400 mt-1 text-sm">
               All your previous scraping jobs
+              {hasActiveJobs && (
+                <span className="ml-2 text-blue-400 animate-pulse">
+                  ● Live updating
+                </span>
+              )}
             </p>
           </div>
           <div className="flex gap-3 w-full sm:w-auto">
             <button
-              onClick={fetchHistory}
+              onClick={() => fetchHistory()}
               className="flex-1 sm:flex-none bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition text-sm"
             >
               🔄 Refresh
@@ -217,7 +291,8 @@ export default function JobHistory() {
               <option value="all">All Status</option>
               <option value="completed">✅ Completed</option>
               <option value="running">⏳ Running</option>
-              <option value="error">❌ Failed</option>
+              <option value="failed">❌ Failed</option>
+              <option value="cancelled">⛔ Cancelled</option>
             </select>
           </div>
         )}
@@ -305,7 +380,7 @@ export default function JobHistory() {
                   {filteredJobs.map((job, index) => (
                     <tr
                       key={job.job_id}
-                      className="border-t border-white/5 hover:bg-white/5 transition"
+                      className={`border-t border-white/5 hover:bg-white/5 transition ${isRunning(job.status) ? "bg-blue-500/5" : ""}`}
                     >
                       <td className="p-4 text-gray-500 text-sm">{index + 1}</td>
                       <td className="p-4 text-white font-medium">
@@ -333,25 +408,61 @@ export default function JobHistory() {
                       </td>
                       <td className="p-4">
                         <div className="flex items-center gap-2">
-                          <div className="w-24 bg-gray-700 rounded-full h-2">
+                          <div className="w-24 bg-gray-700 rounded-full h-2 overflow-hidden">
                             <div
-                              className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full"
-                              style={{ width: `${job.progress}%` }}
+                              className={`h-2 rounded-full transition-all duration-500 ${
+                                isRunning(job.status)
+                                  ? "bg-gradient-to-r from-blue-500 to-purple-500 animate-pulse"
+                                  : job.status === "completed"
+                                    ? "bg-gradient-to-r from-green-500 to-emerald-500"
+                                    : "bg-gradient-to-r from-red-500 to-red-600"
+                              }`}
+                              style={{ width: `${job.progress || 0}%` }}
                             />
                           </div>
-                          <span className="text-gray-400 text-xs">
-                            {job.progress}%
+                          <span className="text-gray-400 text-xs w-8">
+                            {job.progress || 0}%
                           </span>
                         </div>
+                        {isRunning(job.status) && (
+                          <p className="text-blue-400 text-xs mt-1 animate-pulse">
+                            Scraping {job.leads_count}/{job.requested_leads}...
+                          </p>
+                        )}
                       </td>
                       <td className="p-4">
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
+                          {/* View button */}
                           <button
                             onClick={() => navigate(`/job/${job.job_id}`)}
                             className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 px-3 py-1 rounded-lg text-sm transition border border-blue-500/30"
                           >
                             View →
                           </button>
+
+                          {/* Cancel button for running jobs */}
+                          {isRunning(job.status) && (
+                            <button
+                              onClick={() => handleCancel(job.job_id)}
+                              disabled={cancellingId === job.job_id}
+                              className="bg-yellow-500/20 hover:bg-yellow-500/40 text-yellow-400 px-3 py-1 rounded-lg text-sm transition border border-yellow-500/30"
+                            >
+                              {cancellingId === job.job_id ? "..." : "⛔ Stop"}
+                            </button>
+                          )}
+
+                          {/* Retry button for failed/cancelled jobs */}
+                          {isFailed(job.status) && (
+                            <button
+                              onClick={() => handleRetry(job)}
+                              disabled={retryingId === job.job_id}
+                              className="bg-green-500/20 hover:bg-green-500/40 text-green-400 px-3 py-1 rounded-lg text-sm transition border border-green-500/30"
+                            >
+                              {retryingId === job.job_id ? "..." : "🔁 Retry"}
+                            </button>
+                          )}
+
+                          {/* Delete button */}
                           {confirmDelete === job.job_id ? (
                             <div className="flex gap-1">
                               <button
@@ -389,7 +500,11 @@ export default function JobHistory() {
               {filteredJobs.map((job) => (
                 <div
                   key={job.job_id}
-                  className="bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl p-4 shadow-lg border border-white/5"
+                  className={`bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl p-4 shadow-lg border ${
+                    isRunning(job.status)
+                      ? "border-blue-500/30"
+                      : "border-white/5"
+                  }`}
                 >
                   <div className="flex justify-between items-start mb-3">
                     <div>
@@ -406,6 +521,7 @@ export default function JobHistory() {
                       {getStatusText(job.status)}
                     </span>
                   </div>
+
                   <div className="flex justify-between items-center mb-3">
                     <div>
                       <p className="text-gray-400 text-xs">Leads Found</p>
@@ -415,29 +531,62 @@ export default function JobHistory() {
                           / {job.requested_leads}
                         </span>
                       </p>
+                      {isRunning(job.status) && (
+                        <p className="text-blue-400 text-xs animate-pulse">
+                          Scraping in progress...
+                        </p>
+                      )}
                     </div>
                     <div className="text-right">
                       <p className="text-gray-400 text-xs mb-1">Progress</p>
                       <div className="flex items-center gap-2">
-                        <div className="w-20 bg-gray-700 rounded-full h-2">
+                        <div className="w-20 bg-gray-700 rounded-full h-2 overflow-hidden">
                           <div
-                            className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full"
-                            style={{ width: `${job.progress}%` }}
+                            className={`h-2 rounded-full transition-all duration-500 ${
+                              isRunning(job.status)
+                                ? "bg-gradient-to-r from-blue-500 to-purple-500 animate-pulse"
+                                : job.status === "completed"
+                                  ? "bg-gradient-to-r from-green-500 to-emerald-500"
+                                  : "bg-red-500"
+                            }`}
+                            style={{ width: `${job.progress || 0}%` }}
                           />
                         </div>
                         <span className="text-gray-400 text-xs">
-                          {job.progress}%
+                          {job.progress || 0}%
                         </span>
                       </div>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+
+                  <div className="flex gap-2 flex-wrap">
                     <button
                       onClick={() => navigate(`/job/${job.job_id}`)}
                       className="flex-1 bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 rounded-xl text-sm transition border border-blue-500/30"
                     >
                       View Leads →
                     </button>
+
+                    {isRunning(job.status) && (
+                      <button
+                        onClick={() => handleCancel(job.job_id)}
+                        disabled={cancellingId === job.job_id}
+                        className="bg-yellow-500/20 text-yellow-400 px-4 py-2 rounded-xl text-sm border border-yellow-500/30"
+                      >
+                        {cancellingId === job.job_id ? "..." : "⛔ Stop"}
+                      </button>
+                    )}
+
+                    {isFailed(job.status) && (
+                      <button
+                        onClick={() => handleRetry(job)}
+                        disabled={retryingId === job.job_id}
+                        className="bg-green-500/20 text-green-400 px-4 py-2 rounded-xl text-sm border border-green-500/30"
+                      >
+                        {retryingId === job.job_id ? "..." : "🔁 Retry"}
+                      </button>
+                    )}
+
                     {confirmDelete === job.job_id ? (
                       <div className="flex gap-1">
                         <button

@@ -2,6 +2,7 @@ import time
 from pymongo import MongoClient
 from app.scrapers.google_maps import scrape_google_maps
 import os
+from datetime import datetime
 
 # MongoDB connection
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/prospectminer")
@@ -17,7 +18,7 @@ def load_jobs():
     """Load all jobs from MongoDB into memory on startup"""
     try:
         for job in jobs_collection.find({}):
-            job_id = job["job_id"]
+            job_id = job.get("job_id") or str(job.get("_id"))
             status = job.get("status", "unknown")
             progress = 100 if status == "completed" else job.get("progress", 0)
             JOB_STATUS[job_id] = {
@@ -27,6 +28,9 @@ def load_jobs():
                 "keyword": job.get("keyword", ""),
                 "location": job.get("location", ""),
                 "requested_leads": job.get("requested_leads", 0),
+                "created_at": str(job.get("created_at", "")),
+                "user_id": job.get("user_id", ""),
+                "cancelled": False,
             }
         print(f"✅ Loaded {len(JOB_STATUS)} jobs from MongoDB")
     except Exception as e:
@@ -72,22 +76,22 @@ def run_scrape_job_sync(query: str, count: int = 10, job_id: str = None):
         JOB_STATUS[job_id]["progress"] = 10
         JOB_STATUS[job_id]["status"] = "scraping"
         save_job(job_id, JOB_STATUS[job_id])
-        time.sleep(1)
-
-        JOB_STATUS[job_id]["progress"] = 30
-        save_job(job_id, JOB_STATUS[job_id])
         time.sleep(0.5)
 
-        JOB_STATUS[job_id]["progress"] = 50
+        JOB_STATUS[job_id]["progress"] = 20
         save_job(job_id, JOB_STATUS[job_id])
 
-    leads = scrape_google_maps(query, max_results=count)
+    # ✅ job_id aur JOB_STATUS pass karo taaki live update ho
+    leads = scrape_google_maps(query, max_results=count, job_id=job_id, job_status=JOB_STATUS)
     print(f"✅ Scraped {len(leads)} leads")
 
     if job_id and job_id in JOB_STATUS:
-        JOB_STATUS[job_id]["progress"] = 80
-        save_job(job_id, JOB_STATUS[job_id])
-        time.sleep(0.3)
+        # Check if cancelled
+        if JOB_STATUS[job_id].get("cancelled"):
+            print(f"⛔ Job {job_id} was cancelled, saving partial results")
+            JOB_STATUS[job_id]["leads"] = leads
+            save_job(job_id, JOB_STATUS[job_id])
+            return leads
 
         JOB_STATUS[job_id]["progress"] = 100
         JOB_STATUS[job_id]["status"] = "completed"

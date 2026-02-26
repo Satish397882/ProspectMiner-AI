@@ -2,8 +2,16 @@ import time
 from playwright.sync_api import sync_playwright
 
 
-def scrape_google_maps(query: str, max_results: int = 10):
+def scrape_google_maps(query: str, max_results: int = 10, job_id: str = None, job_status: dict = None):
     leads = []
+
+    def update_live(current_leads):
+        """Live update JOB_STATUS har lead ke baad"""
+        if job_id and job_status and job_id in job_status:
+            job_status[job_id]["leads"] = list(current_leads)
+            # Progress calculate karo based on leads found
+            scraping_progress = int((len(current_leads) / max_results) * 70) + 20  # 20-90% range
+            job_status[job_id]["progress"] = min(scraping_progress, 90)
 
     try:
         with sync_playwright() as p:
@@ -33,19 +41,23 @@ def scrape_google_maps(query: str, max_results: int = 10):
             except:
                 pass
 
-            # Collect unique listing URLs first (avoid duplicates)
+            # Collect unique listing URLs first
             listing_urls = []
             seen_urls = set()
             scroll_attempts = 0
 
             while len(listing_urls) < max_results and scroll_attempts < 25:
-                all_links = page.query_selector_all('a[href*="/maps/place/"]')
+                # Check if job was cancelled
+                if job_id and job_status and job_id in job_status:
+                    if job_status[job_id].get("cancelled"):
+                        print(f"⛔ Job {job_id} cancelled during URL collection")
+                        browser.close()
+                        return leads
 
+                all_links = page.query_selector_all('a[href*="/maps/place/"]')
                 for link in all_links:
                     href = link.get_attribute("href")
-                    # Normalize URL - take only the place path part
                     if href:
-                        # Extract clean URL without extra params
                         clean_url = href.split("?")[0] if "?" in href else href
                         if clean_url not in seen_urls:
                             seen_urls.add(clean_url)
@@ -71,9 +83,15 @@ def scrape_google_maps(query: str, max_results: int = 10):
             listing_urls = listing_urls[:max_results]
             print(f"✅ Scraping {len(listing_urls)} unique listings...")
 
-            # Visit each unique listing URL directly
+            # Visit each listing
             seen_names = set()
             for i, url in enumerate(listing_urls):
+                # Check if job was cancelled
+                if job_id and job_status and job_id in job_status:
+                    if job_status[job_id].get("cancelled"):
+                        print(f"⛔ Job {job_id} cancelled at lead {i+1}")
+                        break
+
                 try:
                     page.goto(url, wait_until="domcontentloaded", timeout=30000)
                     time.sleep(2.5)
@@ -85,6 +103,8 @@ def scrape_google_maps(query: str, max_results: int = 10):
                         if name_key not in seen_names:
                             seen_names.add(name_key)
                             leads.append(lead)
+                            # ✅ LIVE UPDATE - har lead ke baad
+                            update_live(leads)
                             print(f"✅ [{len(leads)}/{max_results}] {lead.get('name')} | {lead.get('phone', '-')} | ⭐{lead.get('rating', '-')}")
                         else:
                             print(f"⏭️ Duplicate skipped: {lead.get('name')}")

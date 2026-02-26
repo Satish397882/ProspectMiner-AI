@@ -6,14 +6,13 @@ import Dashboard from "./pages/Dashboard";
 import CreateJob from "./pages/CreateJob";
 import JobProgress from "./pages/JobProgress";
 import History from "./pages/JobHistory";
+import Analytics from "./pages/Analytics";
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    // Initialize from localStorage immediately
     return !!localStorage.getItem("token");
   });
 
-  // Listen for storage changes
   useEffect(() => {
     const checkAuth = () => {
       const token = localStorage.getItem("token");
@@ -21,10 +20,8 @@ function App() {
       setIsAuthenticated(!!token);
     };
 
-    // Check on mount
     checkAuth();
 
-    // Check when localStorage changes
     window.addEventListener("storage", checkAuth);
     return () => window.removeEventListener("storage", checkAuth);
   }, []);
@@ -46,6 +43,7 @@ function App() {
             <Route path="/create-job" element={<CreateJob />} />
             <Route path="/job/:jobId" element={<JobProgress />} />
             <Route path="/history" element={<History />} />
+            <Route path="/analytics" element={<Analytics />} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
           </>
         ) : (

@@ -58,6 +58,12 @@ export default function Dashboard() {
             History
           </button>
           <button
+            onClick={() => navigate("/analytics")}
+            className="text-gray-300 hover:text-white transition"
+          >
+            Analytics
+          </button>
+          <button
             onClick={handleLogout}
             className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition"
           >
@@ -100,6 +106,15 @@ export default function Dashboard() {
             className="text-gray-300 text-left py-2 border-b border-gray-700"
           >
             History
+          </button>
+          <button
+            onClick={() => {
+              navigate("/analytics");
+              setMenuOpen(false);
+            }}
+            className="text-gray-300 text-left py-2 border-b border-gray-700"
+          >
+            Analytics
           </button>
           <button
             onClick={handleLogout}
@@ -146,7 +161,10 @@ export default function Dashboard() {
               </p>
             </div>
 
-            <div className="bg-gradient-to-br from-green-500 to-green-700 rounded-2xl p-6 md:p-8 shadow-xl sm:col-span-2 md:col-span-1">
+            <div
+              className="bg-gradient-to-br from-green-500 to-green-700 rounded-2xl p-6 md:p-8 shadow-xl cursor-pointer transform hover:scale-105 active:scale-95 transition sm:col-span-2 md:col-span-1"
+              onClick={() => navigate("/analytics")}
+            >
               <div className="text-4xl md:text-5xl mb-3">📈</div>
               <h3 className="text-xl md:text-2xl font-bold text-white mb-2">
                 Total Leads

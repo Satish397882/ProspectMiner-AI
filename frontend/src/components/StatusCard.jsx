@@ -1,8 +1,11 @@
-export default function StatusCard({ title, value }) {
+export default function StatusCard({ title, value, icon }) {
   return (
-    <div className="bg-white rounded-xl shadow p-6">
-      <p className="text-gray-500 text-sm">{title}</p>
-      <p className="text-3xl font-bold mt-2">{value}</p>
+    <div className="bg-[#1f2b47] rounded-2xl shadow p-6 border border-[#45f3ff33]">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-gray-400 text-sm">{title}</p>
+        <span className="text-2xl">{icon}</span>
+      </div>
+      <p className="text-3xl font-bold text-white">{value}</p>
     </div>
-  )
+  );
 }

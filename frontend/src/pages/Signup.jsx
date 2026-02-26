@@ -1,43 +1,102 @@
-import { useState } from "react"
-import api from "../api/axios"
-import { useNavigate } from "react-router-dom"
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
+import "../styles/auth.css";
 
-export default function Signup() {
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const navigate = useNavigate()
+const Signup = ({ setAuth }) => {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const navigate = useNavigate();
 
-  const submit = async e => {
-    e.preventDefault()
-    await api.post("/auth/signup", { email, password })
-    navigate("/login")
-  }
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+
+    try {
+      const response = await axios.post(
+        "http://localhost:8000/api/auth/register",
+        {
+          name,
+          email,
+          password,
+        },
+      );
+
+      if (response.data.token) {
+        localStorage.setItem("token", response.data.token);
+        setAuth(true);
+        setSuccess("Registration successful!");
+        setTimeout(() => navigate("/dashboard"), 500);
+      }
+    } catch (err) {
+      setError(err.response?.data?.detail || "Registration failed!");
+    }
+  };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <form
-        onSubmit={submit}
-        className="bg-white p-8 rounded-xl shadow-lg w-96"
-      >
-        <h2 className="text-2xl font-bold mb-6">Create Account</h2>
+    <div className="welcome-container">
+      <div className="welcome-box">
+        <div className="welcome-left">
+          <h2>Sign Up</h2>
+          <form onSubmit={handleSubmit}>
+            <div className="welcome-input-group">
+              <i className="fas fa-user"></i>
+              <input
+                type="text"
+                placeholder="Name"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
 
-        <input
-          className="w-full p-3 mb-4 border rounded"
-          placeholder="Email"
-          onChange={e => setEmail(e.target.value)}
-        />
+            <div className="welcome-input-group">
+              <i className="fas fa-user"></i>
+              <input
+                type="email"
+                placeholder="Email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
 
-        <input
-          type="password"
-          className="w-full p-3 mb-4 border rounded"
-          placeholder="Password"
-          onChange={e => setPassword(e.target.value)}
-        />
+            <div className="welcome-input-group">
+              <i className="fas fa-lock"></i>
+              <input
+                type="password"
+                placeholder="Password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
 
-        <button className="w-full bg-black text-white py-3 rounded hover:bg-gray-800">
-          Sign up
-        </button>
-      </form>
+            {error && <div className="welcome-error">{error}</div>}
+            {success && <div className="welcome-success">{success}</div>}
+
+            <button type="submit" className="welcome-btn">
+              Sign Up
+            </button>
+
+            <div className="welcome-toggle">
+              Already have an account?
+              <button type="button" onClick={() => navigate("/login")}>
+                Login
+              </button>
+            </div>
+          </form>
+        </div>
+        <div className="welcome-right">
+          <h1>WELCOME</h1>
+        </div>
+      </div>
     </div>
-  )
-}
+  );
+};
+
+export default Signup;

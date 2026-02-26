@@ -1,73 +1,59 @@
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
-import Navbar from "./components/Navbar";
-
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useState, useEffect } from "react";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
 import CreateJob from "./pages/CreateJob";
-import JobHistory from "./pages/JobHistory";
 import JobProgress from "./pages/JobProgress";
-import ProtectedRoute from "./components/ProtectedRoute";
+import History from "./pages/JobHistory";
 
-function AppContent() {
-  const location = useLocation();
-  const hideNavbar =
-    location.pathname === "/login" || location.pathname === "/signup";
+function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    // Initialize from localStorage immediately
+    return !!localStorage.getItem("token");
+  });
 
-  return (
-    <>
-      {!hideNavbar && <Navbar />}
+  // Listen for storage changes
+  useEffect(() => {
+    const checkAuth = () => {
+      const token = localStorage.getItem("token");
+      console.log("Auth check - Token:", token ? "EXISTS" : "MISSING");
+      setIsAuthenticated(!!token);
+    };
 
-      <Routes>
-        {/* PUBLIC */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
+    // Check on mount
+    checkAuth();
 
-        {/* PROTECTED */}
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          }
-        />
+    // Check when localStorage changes
+    window.addEventListener("storage", checkAuth);
+    return () => window.removeEventListener("storage", checkAuth);
+  }, []);
 
-        <Route
-          path="/create"
-          element={
-            <ProtectedRoute>
-              <CreateJob />
-            </ProtectedRoute>
-          }
-        />
+  console.log("App render - isAuthenticated:", isAuthenticated);
 
-        <Route
-          path="/history"
-          element={
-            <ProtectedRoute>
-              <JobHistory />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/jobs/:jobId"
-          element={
-            <ProtectedRoute>
-              <JobProgress />
-            </ProtectedRoute>
-          }
-        />
-      </Routes>
-    </>
-  );
-}
-
-export default function App() {
   return (
     <BrowserRouter>
-      <AppContent />
+      <Routes>
+        <Route path="/login" element={<Login setAuth={setIsAuthenticated} />} />
+        <Route
+          path="/signup"
+          element={<Signup setAuth={setIsAuthenticated} />}
+        />
+
+        {isAuthenticated ? (
+          <>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/create-job" element={<CreateJob />} />
+            <Route path="/job/:jobId" element={<JobProgress />} />
+            <Route path="/history" element={<History />} />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          </>
+        ) : (
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        )}
+      </Routes>
     </BrowserRouter>
   );
 }
+
+export default App;

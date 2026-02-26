@@ -1,18 +1,14 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
 import axios from "axios";
 import "../styles/auth.css";
 
-const Login = () => {
-  const [isLogin, setIsLogin] = useState(true);
+const Login = ({ setAuth }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const navigate = useNavigate();
-  const { login } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -20,22 +16,22 @@ const Login = () => {
     setSuccess("");
 
     try {
-      const endpoint = isLogin ? "/api/auth/login" : "/api/auth/register";
-      const payload = isLogin ? { email, password } : { name, email, password };
-
       const response = await axios.post(
-        `http://localhost:8000${endpoint}`,
-        payload,
+        "http://localhost:8000/api/auth/login",
+        {
+          email,
+          password,
+        },
       );
 
       if (response.data.token) {
         localStorage.setItem("token", response.data.token);
-        login(response.data.user);
-        setSuccess(isLogin ? "Login successful!" : "Registration successful!");
-        setTimeout(() => navigate("/"), 1000);
+        setAuth(true); // Update App.jsx state
+        setSuccess("Login successful!");
+        setTimeout(() => navigate("/dashboard"), 500);
       }
     } catch (err) {
-      setError(err.response?.data?.detail || "Something went wrong!");
+      setError(err.response?.data?.detail || "Invalid credentials!");
     }
   };
 
@@ -43,21 +39,8 @@ const Login = () => {
     <div className="welcome-container">
       <div className="welcome-box">
         <div className="welcome-left">
-          <h2>{isLogin ? "Login" : "Sign Up"}</h2>
+          <h2>Login</h2>
           <form onSubmit={handleSubmit}>
-            {!isLogin && (
-              <div className="welcome-input-group">
-                <i className="fas fa-user"></i>
-                <input
-                  type="text"
-                  placeholder="Name"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-            )}
-
             <div className="welcome-input-group">
               <i className="fas fa-user"></i>
               <input
@@ -84,13 +67,13 @@ const Login = () => {
             {success && <div className="welcome-success">{success}</div>}
 
             <button type="submit" className="welcome-btn">
-              {isLogin ? "Login" : "Sign Up"}
+              Login
             </button>
 
             <div className="welcome-toggle">
-              {isLogin ? "Don't have an account?" : "Already have an account?"}
-              <button type="button" onClick={() => setIsLogin(!isLogin)}>
-                {isLogin ? "Sign Up" : "Login"}
+              Don't have an account?
+              <button type="button" onClick={() => navigate("/signup")}>
+                Sign Up
               </button>
             </div>
           </form>

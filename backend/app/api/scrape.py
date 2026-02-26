@@ -15,7 +15,7 @@ def start_scrape(request: ScrapeRequest):
     query = f"{request.keyword} in {request.location}"
     
     # Run synchronously (no background task)
-    leads = run_scrape_job_sync(query, count=request.count)
+    leads = run_scrape_job_sync(query, count=request.leads)
     
     return {"job_id": "sync", "leads": leads}
 

@@ -7,7 +7,7 @@ def scrape_google_maps(query: str, max_results: int = 10):
     # MOCK DATA - returns multiple leads for testing
     mock_leads = []
     
-    for i in range(min(max_results, 10)):  # Limit to requested count
+    for i in range(max_results):  # Limit to requested count
         mock_leads.append({
             "name": f"Business {i+1} - {query}",
             "phone": f"98765432{i:02d}",

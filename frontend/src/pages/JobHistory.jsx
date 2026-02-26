@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import AnimatedBackground from "../components/AnimatedBackground";
 
 export default function JobHistory() {
   const navigate = useNavigate();
@@ -76,8 +77,10 @@ export default function JobHistory() {
   });
 
   return (
-    <div className="min-h-screen bg-[#0f1221]">
-      <nav className="bg-[#1a1f3a] px-4 md:px-8 py-4 flex justify-between items-center shadow-lg">
+    <div className="min-h-screen bg-[#0a0d1a] relative overflow-hidden">
+      <AnimatedBackground />
+
+      <nav className="relative z-10 bg-[#1a1f3a]/80 backdrop-blur-md px-4 md:px-8 py-4 flex justify-between items-center shadow-lg border-b border-white/5">
         <h1
           className="text-xl md:text-2xl font-bold text-white cursor-pointer"
           onClick={() => navigate("/dashboard")}
@@ -125,7 +128,7 @@ export default function JobHistory() {
       </nav>
 
       {menuOpen && (
-        <div className="md:hidden bg-[#1a1f3a] px-4 py-4 flex flex-col gap-3 border-t border-gray-700">
+        <div className="relative z-10 md:hidden bg-[#1a1f3a]/90 backdrop-blur-md px-4 py-4 flex flex-col gap-3 border-t border-gray-700">
           <button
             onClick={() => {
               navigate("/dashboard");
@@ -171,7 +174,7 @@ export default function JobHistory() {
         </div>
       )}
 
-      <div className="p-4 md:p-8 max-w-6xl mx-auto">
+      <div className="relative z-10 p-4 md:p-8 max-w-6xl mx-auto">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <div>
             <h2 className="text-2xl md:text-4xl font-bold text-white">
@@ -204,12 +207,12 @@ export default function JobHistory() {
               placeholder="🔍 Search by keyword or location..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="flex-1 bg-[#1a1f3a] text-white placeholder-gray-500 px-4 py-2.5 rounded-xl border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+              className="flex-1 bg-[#1a1f3a]/70 backdrop-blur-md text-white placeholder-gray-500 px-4 py-2.5 rounded-xl border border-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
             />
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="bg-[#1a1f3a] text-gray-300 px-4 py-2.5 rounded-xl border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition cursor-pointer"
+              className="bg-[#1a1f3a]/70 backdrop-blur-md text-gray-300 px-4 py-2.5 rounded-xl border border-white/10 focus:outline-none focus:ring-2 focus:ring-blue-500 transition cursor-pointer"
             >
               <option value="all">All Status</option>
               <option value="completed">✅ Completed</option>
@@ -226,7 +229,7 @@ export default function JobHistory() {
         )}
 
         {!loading && jobs.length === 0 && (
-          <div className="text-center py-20 bg-[#1a1f3a] rounded-2xl">
+          <div className="text-center py-20 bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl border border-white/5">
             <div className="text-6xl mb-4">📭</div>
             <h3 className="text-2xl font-bold text-white mb-2">No jobs yet</h3>
             <p className="text-gray-400 mb-6">Create your first scraping job</p>
@@ -240,7 +243,7 @@ export default function JobHistory() {
         )}
 
         {!loading && jobs.length > 0 && filteredJobs.length === 0 && (
-          <div className="text-center py-16 bg-[#1a1f3a] rounded-2xl">
+          <div className="text-center py-16 bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl border border-white/5">
             <div className="text-5xl mb-4">🔍</div>
             <p className="text-white text-xl font-bold mb-2">
               No results found
@@ -271,10 +274,10 @@ export default function JobHistory() {
             </p>
 
             {/* Desktop Table */}
-            <div className="hidden md:block bg-[#1a1f3a] rounded-2xl overflow-hidden shadow-xl">
+            <div className="hidden md:block bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl overflow-hidden shadow-xl border border-white/5">
               <table className="w-full">
                 <thead>
-                  <tr className="bg-[#0f1221]">
+                  <tr className="bg-[#0f1221]/80">
                     <th className="p-4 text-left text-gray-400 font-medium">
                       #
                     </th>
@@ -302,7 +305,7 @@ export default function JobHistory() {
                   {filteredJobs.map((job, index) => (
                     <tr
                       key={job.job_id}
-                      className="border-t border-gray-700/50 hover:bg-[#0f1221]/50 transition"
+                      className="border-t border-white/5 hover:bg-white/5 transition"
                     >
                       <td className="p-4 text-gray-500 text-sm">{index + 1}</td>
                       <td className="p-4 text-white font-medium">
@@ -386,7 +389,7 @@ export default function JobHistory() {
               {filteredJobs.map((job) => (
                 <div
                   key={job.job_id}
-                  className="bg-[#1a1f3a] rounded-2xl p-4 shadow-lg"
+                  className="bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl p-4 shadow-lg border border-white/5"
                 >
                   <div className="flex justify-between items-start mb-3">
                     <div>

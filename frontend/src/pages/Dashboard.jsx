@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
+import AnimatedBackground from "../components/AnimatedBackground";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -36,8 +37,10 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0f1221]">
-      <nav className="bg-[#1a1f3a] px-4 md:px-8 py-4 flex justify-between items-center shadow-lg">
+    <div className="min-h-screen bg-[#0a0d1a] relative overflow-hidden">
+      <AnimatedBackground />
+
+      <nav className="relative z-10 bg-[#1a1f3a]/80 backdrop-blur-md px-4 md:px-8 py-4 flex justify-between items-center shadow-lg border-b border-white/5">
         <h1 className="text-xl md:text-2xl font-bold text-white">
           ProspectMiner AI
         </h1>
@@ -82,7 +85,7 @@ export default function Dashboard() {
       </nav>
 
       {menuOpen && (
-        <div className="md:hidden bg-[#1a1f3a] px-4 py-4 flex flex-col gap-3 border-t border-gray-700">
+        <div className="relative z-10 md:hidden bg-[#1a1f3a]/90 backdrop-blur-md px-4 py-4 flex flex-col gap-3 border-t border-gray-700">
           <button
             onClick={() => {
               navigate("/dashboard");
@@ -128,7 +131,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="p-4 md:p-8">
+      <div className="relative z-10 p-4 md:p-8">
         <div className="max-w-6xl mx-auto">
           <h2 className="text-2xl md:text-4xl font-bold text-white mb-2">
             Welcome to ProspectMiner AI 🚀
@@ -183,7 +186,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="bg-[#1a1f3a] rounded-2xl p-4 md:p-8 shadow-xl">
+          <div className="bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl p-4 md:p-8 shadow-xl border border-white/5">
             <div className="flex justify-between items-center mb-4 md:mb-6">
               <h3 className="text-xl md:text-2xl font-bold text-white">
                 Quick Stats
@@ -206,7 +209,7 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-3 md:gap-6">
-                <div className="text-center bg-[#0f1221] p-3 md:p-6 rounded-xl">
+                <div className="text-center bg-[#0f1221]/80 p-3 md:p-6 rounded-xl border border-white/5">
                   <p className="text-gray-400 text-xs md:text-sm mb-1">
                     Active Jobs
                   </p>
@@ -214,7 +217,7 @@ export default function Dashboard() {
                     {stats.active_jobs}
                   </p>
                 </div>
-                <div className="text-center bg-[#0f1221] p-3 md:p-6 rounded-xl">
+                <div className="text-center bg-[#0f1221]/80 p-3 md:p-6 rounded-xl border border-white/5">
                   <p className="text-gray-400 text-xs md:text-sm mb-1">
                     Completed
                   </p>
@@ -222,7 +225,7 @@ export default function Dashboard() {
                     {stats.completed_jobs}
                   </p>
                 </div>
-                <div className="text-center bg-[#0f1221] p-3 md:p-6 rounded-xl">
+                <div className="text-center bg-[#0f1221]/80 p-3 md:p-6 rounded-xl border border-white/5">
                   <p className="text-gray-400 text-xs md:text-sm mb-1">
                     Success Rate
                   </p>

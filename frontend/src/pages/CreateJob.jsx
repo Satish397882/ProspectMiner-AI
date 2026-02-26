@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import AnimatedBackground from "../components/AnimatedBackground";
 
 export default function CreateJob() {
   const navigate = useNavigate();
@@ -32,7 +33,7 @@ export default function CreateJob() {
       });
       const data = await res.json();
       navigate(`/job/${data.job_id}`);
-    } catch (err) {
+    } catch {
       setLoading(false);
       alert("Failed to start job. Is backend running?");
     }
@@ -51,9 +52,10 @@ export default function CreateJob() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#0f1221]">
-      {/* Navbar */}
-      <nav className="bg-[#1a1f3a] px-4 md:px-8 py-4 flex justify-between items-center shadow-lg">
+    <div className="min-h-screen bg-[#0a0d1a] relative overflow-hidden">
+      <AnimatedBackground />
+
+      <nav className="relative z-10 bg-[#1a1f3a]/80 backdrop-blur-md px-4 md:px-8 py-4 flex justify-between items-center shadow-lg border-b border-white/5">
         <h1
           className="text-xl md:text-2xl font-bold text-white cursor-pointer"
           onClick={() => navigate("/dashboard")}
@@ -101,7 +103,7 @@ export default function CreateJob() {
       </nav>
 
       {menuOpen && (
-        <div className="md:hidden bg-[#1a1f3a] px-4 py-4 flex flex-col gap-3 border-t border-gray-700">
+        <div className="relative z-10 md:hidden bg-[#1a1f3a]/90 backdrop-blur-md px-4 py-4 flex flex-col gap-3 border-t border-gray-700">
           <button
             onClick={() => {
               navigate("/dashboard");
@@ -147,7 +149,7 @@ export default function CreateJob() {
         </div>
       )}
 
-      <div className="p-4 md:p-8 max-w-2xl mx-auto">
+      <div className="relative z-10 p-4 md:p-8 max-w-2xl mx-auto">
         <div className="mb-8">
           <h2 className="text-2xl md:text-4xl font-bold text-white mb-2">
             Create New Job 🎯
@@ -157,7 +159,6 @@ export default function CreateJob() {
           </p>
         </div>
 
-        {/* Quick Fill Buttons */}
         <div className="mb-6">
           <p className="text-gray-400 text-sm mb-3">⚡ Quick fill:</p>
           <div className="flex flex-wrap gap-2">
@@ -167,7 +168,7 @@ export default function CreateJob() {
                 onClick={() =>
                   setForm({ ...form, keyword: q.keyword, location: q.location })
                 }
-                className="bg-[#1a1f3a] hover:bg-[#252b4a] text-gray-300 hover:text-white px-3 py-1.5 rounded-lg text-sm transition border border-gray-700 hover:border-blue-500"
+                className="bg-[#1a1f3a]/70 backdrop-blur-md hover:bg-[#252b4a] text-gray-300 hover:text-white px-3 py-1.5 rounded-lg text-sm transition border border-white/10 hover:border-blue-500"
               >
                 {q.keyword}, {q.location}
               </button>
@@ -175,9 +176,7 @@ export default function CreateJob() {
           </div>
         </div>
 
-        {/* Form */}
-        <div className="bg-[#1a1f3a] rounded-2xl p-6 md:p-8 shadow-xl space-y-6">
-          {/* Keyword */}
+        <div className="bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl p-6 md:p-8 shadow-xl space-y-6 border border-white/5">
           <div>
             <label className="block text-gray-300 text-sm font-medium mb-2">
               🔍 Keyword / Business Type
@@ -190,14 +189,13 @@ export default function CreateJob() {
                 setForm({ ...form, keyword: e.target.value });
                 setErrors({ ...errors, keyword: "" });
               }}
-              className={`w-full bg-[#0f1221] text-white placeholder-gray-500 px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${errors.keyword ? "border-red-500" : "border-gray-700 hover:border-gray-500"}`}
+              className={`w-full bg-[#0f1221]/80 text-white placeholder-gray-500 px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${errors.keyword ? "border-red-500" : "border-white/10 hover:border-white/20"}`}
             />
             {errors.keyword && (
               <p className="text-red-400 text-xs mt-1">⚠️ {errors.keyword}</p>
             )}
           </div>
 
-          {/* Location */}
           <div>
             <label className="block text-gray-300 text-sm font-medium mb-2">
               📍 Location / City
@@ -210,14 +208,13 @@ export default function CreateJob() {
                 setForm({ ...form, location: e.target.value });
                 setErrors({ ...errors, location: "" });
               }}
-              className={`w-full bg-[#0f1221] text-white placeholder-gray-500 px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${errors.location ? "border-red-500" : "border-gray-700 hover:border-gray-500"}`}
+              className={`w-full bg-[#0f1221]/80 text-white placeholder-gray-500 px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-blue-500 transition ${errors.location ? "border-red-500" : "border-white/10 hover:border-white/20"}`}
             />
             {errors.location && (
               <p className="text-red-400 text-xs mt-1">⚠️ {errors.location}</p>
             )}
           </div>
 
-          {/* Leads Count */}
           <div>
             <label className="block text-gray-300 text-sm font-medium mb-2">
               📊 Number of Leads:{" "}
@@ -246,7 +243,6 @@ export default function CreateJob() {
             )}
           </div>
 
-          {/* Preview */}
           {form.keyword && form.location && (
             <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
               <p className="text-blue-300 text-sm">
@@ -259,7 +255,6 @@ export default function CreateJob() {
             </div>
           )}
 
-          {/* Submit */}
           <button
             onClick={handleSubmit}
             disabled={loading}

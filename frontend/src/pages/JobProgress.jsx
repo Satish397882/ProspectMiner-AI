@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import AnimatedBackground from "../components/AnimatedBackground";
 
 export default function JobProgress() {
   const { jobId } = useParams();
@@ -12,43 +13,30 @@ export default function JobProgress() {
 
   useEffect(() => {
     let eventSource = null;
-    let fallbackTimer = null;
-
-    fallbackTimer = setTimeout(() => {
-      fetchLeads();
-    }, 2000);
-
+    let fallbackTimer = setTimeout(() => fetchLeads(), 2000);
     try {
       const token = getToken();
-      // SSE ke saath token query param mein bhejte hain
       const url = `http://localhost:8000/scrape/${jobId}/stream?token=${token}`;
       eventSource = new EventSource(url);
-
-      eventSource.onopen = () => {
-        clearTimeout(fallbackTimer);
-      };
-
+      eventSource.onopen = () => clearTimeout(fallbackTimer);
       eventSource.onmessage = (e) => {
         clearTimeout(fallbackTimer);
         const data = JSON.parse(e.data);
         setProgress(data.progress || 0);
         setStatus(data.status || "running");
-
         if (data.status === "completed") {
           eventSource.close();
           fetchLeads();
         }
       };
-
       eventSource.onerror = () => {
         clearTimeout(fallbackTimer);
         eventSource.close();
         fetchLeads();
       };
-    } catch (error) {
+    } catch {
       fetchLeads();
     }
-
     return () => {
       clearTimeout(fallbackTimer);
       if (eventSource) eventSource.close();
@@ -57,11 +45,8 @@ export default function JobProgress() {
 
   const fetchLeads = async () => {
     try {
-      const token = getToken();
       const res = await fetch(`http://localhost:8000/scrape/${jobId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${getToken()}` },
       });
       if (!res.ok) {
         setStatus("error");
@@ -71,15 +56,13 @@ export default function JobProgress() {
       setLeads(data.leads || []);
       setStatus("completed");
       setProgress(100);
-    } catch (error) {
+    } catch {
       setStatus("error");
     }
   };
 
-  // ✅ CSV Export Function
   const exportCSV = () => {
     if (leads.length === 0) return;
-
     const headers = ["Name", "Phone", "Website", "Rating", "Address"];
     const rows = leads.map((lead) => [
       `"${(lead.name || "").replace(/"/g, '""')}"`,
@@ -88,7 +71,6 @@ export default function JobProgress() {
       `"${(lead.rating || "").toString().replace(/"/g, '""')}"`,
       `"${(lead.address || "").replace(/"/g, '""')}"`,
     ]);
-
     const csvContent = [
       headers.join(","),
       ...rows.map((r) => r.join(",")),
@@ -103,9 +85,9 @@ export default function JobProgress() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0f1221]">
-      {/* Navbar */}
-      <nav className="bg-[#1a1f3a] px-8 py-4 flex justify-between items-center shadow-lg">
+    <div className="min-h-screen bg-[#0a0d1a] relative overflow-hidden">
+      <AnimatedBackground />
+      <nav className="relative z-10 bg-[#1a1f3a]/80 backdrop-blur-md px-8 py-4 flex justify-between items-center shadow-lg border-b border-white/5">
         <h1
           className="text-2xl font-bold text-white cursor-pointer"
           onClick={() => navigate("/dashboard")}
@@ -133,19 +115,16 @@ export default function JobProgress() {
           </button>
         </div>
       </nav>
-
-      <div className="p-8 max-w-7xl mx-auto">
+      <div className="relative z-10 p-8 max-w-7xl mx-auto">
         <h2 className="text-3xl font-bold text-white mb-6">Job Results</h2>
-
-        {/* Progress Bar */}
         {status !== "completed" && status !== "error" && (
-          <div className="max-w-2xl mx-auto mb-8 bg-[#1a1f3a] p-6 rounded-2xl">
+          <div className="max-w-2xl mx-auto mb-8 bg-[#1a1f3a]/70 backdrop-blur-md p-6 rounded-2xl border border-white/5">
             <div className="flex justify-between text-gray-400 text-sm mb-3">
               <span>
                 {status === "connecting" && "🔄 Connecting..."}
                 {status === "waiting" && "⏳ Waiting to start..."}
-                {status === "running" && "🚀 Scraping in progress..."}
-                {status === "scraping" && "🚀 Scraping in progress..."}
+                {(status === "running" || status === "scraping") &&
+                  "🚀 Scraping in progress..."}
               </span>
               <span className="font-bold text-blue-400">{progress}%</span>
             </div>
@@ -157,8 +136,6 @@ export default function JobProgress() {
             </div>
           </div>
         )}
-
-        {/* Success Banner */}
         {status === "completed" && leads.length > 0 && (
           <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-4 mb-6 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -174,21 +151,17 @@ export default function JobProgress() {
             </div>
             <button
               onClick={exportCSV}
-              className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-xl transition font-semibold flex items-center gap-2 shadow-lg"
+              className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-xl transition font-semibold"
             >
               📥 Export CSV
             </button>
           </div>
         )}
-
-        {/* Loading */}
         {status === "completed" && leads.length === 0 && (
           <div className="text-gray-400 text-center mt-20 text-xl">
             ⏳ Loading leads...
           </div>
         )}
-
-        {/* Error */}
         {status === "error" && (
           <div className="text-center mt-20">
             <p className="text-red-400 text-xl mb-4">
@@ -202,8 +175,6 @@ export default function JobProgress() {
             </button>
           </div>
         )}
-
-        {/* Leads Table */}
         {leads.length > 0 && (
           <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
             <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-4 flex justify-between items-center">
@@ -296,13 +267,11 @@ export default function JobProgress() {
             </div>
           </div>
         )}
-
-        {/* Bottom Actions */}
         {leads.length > 0 && (
           <div className="flex gap-4 mt-6">
             <button
               onClick={() => navigate("/dashboard")}
-              className="bg-[#1a1f3a] hover:bg-[#252b4a] text-white px-6 py-2 rounded-xl transition border border-gray-700"
+              className="bg-[#1a1f3a]/70 hover:bg-[#252b4a] text-white px-6 py-2 rounded-xl transition border border-white/10"
             >
               ← Dashboard
             </button>

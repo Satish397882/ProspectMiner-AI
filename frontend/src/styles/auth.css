@@ -21,7 +21,8 @@ body {
 .welcome-box {
   position: relative;
   width: 900px;
-  height: 550px;
+  /* height → min-height */
+  height: auto; /* auto height */
   background: #162447;
   border-radius: 20px;
   overflow: hidden;
@@ -55,7 +56,7 @@ body {
 
 .welcome-left {
   flex: 1;
-  padding: 60px 50px;
+  padding: 50px;
   background: #162447;
   display: flex;
   flex-direction: column;
@@ -213,6 +214,7 @@ body {
 
   .welcome-right {
     padding: 40px;
+    min-height: 200px;
   }
 
   .welcome-right h1 {

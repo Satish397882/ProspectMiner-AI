@@ -18,7 +18,7 @@ FastAPI-based scraping engine and REST API for the ProspectMiner AI platform.
 
 ```bash
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8000
 ```
 
 Runs at `http://localhost:8000`

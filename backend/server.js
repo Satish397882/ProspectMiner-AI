@@ -10,8 +10,9 @@ const leadRoutes = require("./src/routes/leadRoutes");
 const exportRoutes = require("./src/routes/exportRoutes");
 const sseRoutes = require("./src/routes/sseRoutes");
 
-// Import Worker
+// Import Workers
 const scrapingWorker = require("./src/workers/scrapingWorker");
+const enrichmentWorker = require("./src/workers/enrichmentWorker");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -47,6 +48,7 @@ app.use("/api/sse", sseRoutes);
 
 // Worker Status
 console.log("🔄 Scraping worker started and listening for jobs...");
+console.log("🤖 Enrichment worker started and listening for jobs...");
 
 // Start Server
 app.listen(PORT, () => {

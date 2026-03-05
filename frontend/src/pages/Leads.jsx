@@ -1,0 +1,517 @@
+/**
+ * Leads.jsx — Week 3 Frontend (Days 1-5)
+ *
+ * Full leads management page for a completed job:
+ *   - Leads table with enriched data (email, category, score, social)
+ *   - Filter bar: Rating, Category, Lead Score, Location search
+ *   - Sort by any column (asc/desc)
+ *   - Pagination
+ *   - Real-time enrichment updates via SSE
+ *   - Enrichment progress bar
+ *   - Export CSV button (Week 4 will add filter-based export)
+ */
+
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import LeadsTable from "../components/LeadsTable";
+import Navbar from "../components/Navbar";
+
+const API = "http://localhost:5000/api";
+const getToken = () => localStorage.getItem("token");
+const authHeaders = () => ({ Authorization: `Bearer ${getToken()}` });
+
+// ── Filter Bar ────────────────────────────────────────────────────────────────
+function FilterBar({ filters, setFilters, categories, onReset }) {
+  return (
+    <div className="bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl p-4 border border-white/5 mb-6">
+      <div className="flex flex-wrap gap-3 items-end">
+        {/* Search */}
+        <div className="flex-1 min-w-[200px]">
+          <label className="block text-xs text-gray-500 mb-1">Search</label>
+          <input
+            type="text"
+            placeholder="Name, email, phone, address..."
+            value={filters.search}
+            onChange={(e) =>
+              setFilters((f) => ({ ...f, search: e.target.value, page: 1 }))
+            }
+            className="w-full bg-[#0f1221] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500/50 transition-colors"
+          />
+        </div>
+
+        {/* Category */}
+        <div className="min-w-[150px]">
+          <label className="block text-xs text-gray-500 mb-1">Category</label>
+          <select
+            value={filters.category}
+            onChange={(e) =>
+              setFilters((f) => ({ ...f, category: e.target.value, page: 1 }))
+            }
+            className="w-full bg-[#0f1221] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50 transition-colors"
+          >
+            <option value="">All Categories</option>
+            {categories.map((c) => (
+              <option key={c.name} value={c.name}>
+                {c.name} ({c.count})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Lead Score */}
+        <div className="min-w-[130px]">
+          <label className="block text-xs text-gray-500 mb-1">Lead Score</label>
+          <select
+            value={filters.leadScore}
+            onChange={(e) =>
+              setFilters((f) => ({ ...f, leadScore: e.target.value, page: 1 }))
+            }
+            className="w-full bg-[#0f1221] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50 transition-colors"
+          >
+            <option value="">All Scores</option>
+            <option value="hot">🔥 Hot</option>
+            <option value="warm">🌤 Warm</option>
+            <option value="cold">❄️ Cold</option>
+          </select>
+        </div>
+
+        {/* Min Rating */}
+        <div className="min-w-[120px]">
+          <label className="block text-xs text-gray-500 mb-1">Min Rating</label>
+          <select
+            value={filters.rating}
+            onChange={(e) =>
+              setFilters((f) => ({ ...f, rating: e.target.value, page: 1 }))
+            }
+            className="w-full bg-[#0f1221] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50 transition-colors"
+          >
+            <option value="">Any Rating</option>
+            <option value="4.5">★ 4.5+</option>
+            <option value="4.0">★ 4.0+</option>
+            <option value="3.5">★ 3.5+</option>
+            <option value="3.0">★ 3.0+</option>
+          </select>
+        </div>
+
+        {/* Results per page */}
+        <div className="min-w-[100px]">
+          <label className="block text-xs text-gray-500 mb-1">Per page</label>
+          <select
+            value={filters.limit}
+            onChange={(e) =>
+              setFilters((f) => ({ ...f, limit: e.target.value, page: 1 }))
+            }
+            className="w-full bg-[#0f1221] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50 transition-colors"
+          >
+            <option value="10">10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </div>
+
+        {/* Reset */}
+        <button
+          onClick={onReset}
+          className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors"
+        >
+          ✕ Reset
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Stats Cards ───────────────────────────────────────────────────────────────
+function StatsCards({ stats }) {
+  if (!stats) return null;
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div className="bg-[#1a1f3a]/70 rounded-2xl p-4 border border-white/5">
+        <p className="text-gray-500 text-xs mb-1">Total Leads</p>
+        <p className="text-white text-2xl font-bold">{stats.totalLeads}</p>
+      </div>
+      <div className="bg-[#1a1f3a]/70 rounded-2xl p-4 border border-white/5">
+        <p className="text-gray-500 text-xs mb-1">🔥 Hot Leads</p>
+        <p className="text-red-400 text-2xl font-bold">
+          {stats.scores?.hot || 0}
+        </p>
+      </div>
+      <div className="bg-[#1a1f3a]/70 rounded-2xl p-4 border border-white/5">
+        <p className="text-gray-500 text-xs mb-1">Avg Rating</p>
+        <p className="text-yellow-400 text-2xl font-bold">
+          {stats.rating?.avg ? `★ ${stats.rating.avg}` : "—"}
+        </p>
+      </div>
+      <div className="bg-[#1a1f3a]/70 rounded-2xl p-4 border border-white/5 relative overflow-hidden">
+        <p className="text-gray-500 text-xs mb-1">Enriched</p>
+        <p className="text-purple-400 text-2xl font-bold">
+          {stats.enrichmentProgress}%
+        </p>
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-800">
+          <div
+            className="h-1 bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-500"
+            style={{ width: `${stats.enrichmentProgress}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Pagination ────────────────────────────────────────────────────────────────
+function Pagination({ pagination, onPageChange }) {
+  if (!pagination || pagination.totalPages <= 1) return null;
+  const { currentPage, totalPages, totalLeads, limit } = pagination;
+
+  return (
+    <div className="flex flex-col sm:flex-row justify-between items-center gap-3 mt-4 pt-4 border-t border-white/5">
+      <p className="text-gray-500 text-xs">
+        Showing {(currentPage - 1) * limit + 1}–
+        {Math.min(currentPage * limit, totalLeads)} of {totalLeads} leads
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={!pagination.hasPrevPage}
+          className="px-3 py-1.5 text-sm rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          ← Prev
+        </button>
+        {/* Page numbers */}
+        <div className="flex gap-1">
+          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+            let page;
+            if (totalPages <= 5) {
+              page = i + 1;
+            } else if (currentPage <= 3) {
+              page = i + 1;
+            } else if (currentPage >= totalPages - 2) {
+              page = totalPages - 4 + i;
+            } else {
+              page = currentPage - 2 + i;
+            }
+            return (
+              <button
+                key={page}
+                onClick={() => onPageChange(page)}
+                className={`w-8 h-8 text-xs rounded-lg border transition-colors ${
+                  page === currentPage
+                    ? "bg-blue-500 border-blue-500 text-white"
+                    : "bg-white/5 border-white/10 text-gray-400 hover:bg-white/10"
+                }`}
+              >
+                {page}
+              </button>
+            );
+          })}
+        </div>
+        <button
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={!pagination.hasNextPage}
+          className="px-3 py-1.5 text-sm rounded-xl bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          Next →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+const DEFAULT_FILTERS = {
+  search: "",
+  category: "",
+  leadScore: "",
+  rating: "",
+  sortBy: "createdAt",
+  sortOrder: "desc",
+  page: 1,
+  limit: "25",
+};
+
+export default function Leads() {
+  const { jobId } = useParams();
+  const navigate = useNavigate();
+
+  const [leads, setLeads] = useState([]);
+  const [pagination, setPagination] = useState(null);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [enrichingLeadIds, setEnrichingLeadIds] = useState(new Set());
+  const [enrichmentTriggered, setEnrichmentTriggered] = useState(false);
+  const [job, setJob] = useState(null);
+
+  const sseRef = useRef(null);
+  const debounceRef = useRef(null);
+
+  // ── Fetch leads ─────────────────────────────────────────────────────────────
+  const fetchLeads = useCallback(
+    async (f = filters) => {
+      try {
+        setLoading(true);
+        const params = new URLSearchParams({
+          page: f.page,
+          limit: f.limit,
+          sortBy: f.sortBy,
+          sortOrder: f.sortOrder,
+          ...(f.search && { search: f.search }),
+          ...(f.category && { category: f.category }),
+          ...(f.leadScore && { leadScore: f.leadScore }),
+          ...(f.rating && { rating: f.rating }),
+        });
+
+        const res = await fetch(`${API}/leads/${jobId}?${params}`, {
+          headers: authHeaders(),
+        });
+        if (!res.ok) throw new Error("Failed to fetch leads");
+        const data = await res.json();
+        setLeads(data.leads);
+        setPagination(data.pagination);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [jobId],
+  );
+
+  // ── Fetch stats ──────────────────────────────────────────────────────────────
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/leads/${jobId}/stats`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setStats(data);
+    } catch {}
+  }, [jobId]);
+
+  // ── Fetch job info ───────────────────────────────────────────────────────────
+  const fetchJob = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/jobs/${jobId}`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setJob(data.job);
+    } catch {}
+  }, [jobId]);
+
+  // ── Initial load ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    fetchLeads();
+    fetchStats();
+    fetchJob();
+  }, []);
+
+  // ── Debounced filter re-fetch ─────────────────────────────────────────────
+  useEffect(() => {
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchLeads(filters);
+    }, 350);
+    return () => clearTimeout(debounceRef.current);
+  }, [filters]);
+
+  // ── SSE: Real-time enrichment updates ─────────────────────────────────────
+  useEffect(() => {
+    const token = getToken();
+    const url = `${API.replace("/api", "")}/api/sse/${jobId}/enrichment`;
+    const es = new EventSource(`${url}?token=${token}`);
+
+    es.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+
+      if (msg.type === "enrichment_update") {
+        const { leadId } = msg.data;
+
+        // Mark lead as "enriching" briefly then refresh
+        setEnrichingLeadIds((prev) => new Set([...prev, leadId]));
+
+        setTimeout(() => {
+          setEnrichingLeadIds((prev) => {
+            const next = new Set(prev);
+            next.delete(leadId);
+            return next;
+          });
+          // Refresh this lead in the table
+          setLeads((prev) =>
+            prev.map((l) =>
+              l._id === leadId ? { ...l, ...msg.data, enriched: true } : l,
+            ),
+          );
+          // Refresh stats periodically
+          fetchStats();
+        }, 1500);
+      }
+    };
+
+    sseRef.current = es;
+    return () => es.close();
+  }, [jobId]);
+
+  // ── Sort handler ──────────────────────────────────────────────────────────
+  const handleSort = (field) => {
+    setFilters((f) => ({
+      ...f,
+      sortBy: field,
+      sortOrder: f.sortBy === field && f.sortOrder === "desc" ? "asc" : "desc",
+      page: 1,
+    }));
+  };
+
+  // ── Trigger enrichment ────────────────────────────────────────────────────
+  const triggerEnrichment = async () => {
+    try {
+      const res = await fetch(`${API}/leads/${jobId}/enrich`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const data = await res.json();
+      setEnrichmentTriggered(true);
+      alert(`✅ ${data.message}`);
+    } catch {
+      alert("❌ Failed to trigger enrichment");
+    }
+  };
+
+  // ── CSV Export (basic — Week 4 will add filter support) ───────────────────
+  const exportCSV = () => {
+    if (!leads.length) return;
+    const headers = [
+      "Business Name",
+      "Phone",
+      "Email",
+      "Website",
+      "Rating",
+      "Category",
+      "Lead Score",
+      "Address",
+    ];
+    const rows = leads.map((l) =>
+      [
+        l.businessName,
+        l.phone || "",
+        l.email || "",
+        l.website || "",
+        l.rating || "",
+        l.category || "",
+        l.leadScore,
+        l.address || "",
+      ].map((v) => `"${String(v).replace(/"/g, '""')}"`),
+    );
+
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `leads_${jobId.slice(0, 8)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0a0d1a]">
+      <Navbar />
+
+      <div className="p-4 md:p-8 max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <div>
+            <button
+              onClick={() => navigate(-1)}
+              className="text-gray-500 hover:text-gray-300 text-sm mb-2 flex items-center gap-1 transition-colors"
+            >
+              ← Back
+            </button>
+            <h2 className="text-2xl md:text-3xl font-bold text-white">Leads</h2>
+            {job && (
+              <p className="text-gray-400 text-sm mt-1">
+                🔍 {job.keyword} in {job.location}
+              </p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {stats && stats.enrichedLeads < stats.totalLeads && (
+              <button
+                onClick={triggerEnrichment}
+                disabled={enrichmentTriggered}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                🤖 {enrichmentTriggered ? "Enriching…" : "Enrich All"}
+              </button>
+            )}
+            <button
+              onClick={exportCSV}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm bg-green-500/20 border border-green-500/30 text-green-400 hover:bg-green-500/30 transition-colors"
+            >
+              📥 Export CSV
+            </button>
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        <StatsCards stats={stats} />
+
+        {/* Filter Bar */}
+        <FilterBar
+          filters={filters}
+          setFilters={setFilters}
+          categories={stats?.categories || []}
+          onReset={() => setFilters(DEFAULT_FILTERS)}
+        />
+
+        {/* Active filters summary */}
+        {(filters.search ||
+          filters.category ||
+          filters.leadScore ||
+          filters.rating) && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {filters.search && (
+              <span className="bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs px-2 py-1 rounded-full">
+                Search: {filters.search}
+              </span>
+            )}
+            {filters.category && (
+              <span className="bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs px-2 py-1 rounded-full">
+                Category: {filters.category}
+              </span>
+            )}
+            {filters.leadScore && (
+              <span className="bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs px-2 py-1 rounded-full">
+                Score: {filters.leadScore}
+              </span>
+            )}
+            {filters.rating && (
+              <span className="bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs px-2 py-1 rounded-full">
+                Rating ≥ {filters.rating}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Leads Table */}
+        <LeadsTable
+          leads={leads}
+          loading={loading}
+          enrichingLeadIds={enrichingLeadIds}
+          onSort={handleSort}
+          sortBy={filters.sortBy}
+          sortOrder={filters.sortOrder}
+        />
+
+        {/* Pagination */}
+        <Pagination
+          pagination={pagination}
+          onPageChange={(p) => setFilters((f) => ({ ...f, page: p }))}
+        />
+      </div>
+    </div>
+  );
+}

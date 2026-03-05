@@ -17,9 +17,8 @@ export default function JobHistory() {
 
   useEffect(() => {
     fetchHistory();
-    // Auto-poll har 3 seconds for live progress
     intervalRef.current = setInterval(() => {
-      fetchHistory(true); // silent
+      fetchHistory(true);
     }, 3000);
     return () => clearInterval(intervalRef.current);
   }, []);
@@ -62,7 +61,6 @@ export default function JobHistory() {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
-      // Optimistic update
       setJobs((prev) =>
         prev.map((j) =>
           j.job_id === jobId
@@ -103,6 +101,14 @@ export default function JobHistory() {
   const handleLogout = () => {
     localStorage.removeItem("token");
     navigate("/login");
+  };
+
+  const handleViewJob = (job) => {
+    if (job.status === "completed") {
+      navigate(`/leads/${job.job_id}`);
+    } else {
+      navigate(`/job/${job.job_id}`);
+    }
   };
 
   const getStatusBadge = (status) => {
@@ -432,15 +438,13 @@ export default function JobHistory() {
                       </td>
                       <td className="p-4">
                         <div className="flex gap-2 flex-wrap">
-                          {/* View button */}
                           <button
-                            onClick={() => navigate(`/job/${job.job_id}`)}
+                            onClick={() => handleViewJob(job)}
                             className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 px-3 py-1 rounded-lg text-sm transition border border-blue-500/30"
                           >
-                            View →
+                            {job.status === "completed" ? "Leads →" : "View →"}
                           </button>
 
-                          {/* Cancel button for running jobs */}
                           {isRunning(job.status) && (
                             <button
                               onClick={() => handleCancel(job.job_id)}
@@ -451,7 +455,6 @@ export default function JobHistory() {
                             </button>
                           )}
 
-                          {/* Retry button for failed/cancelled jobs */}
                           {isFailed(job.status) && (
                             <button
                               onClick={() => handleRetry(job)}
@@ -462,7 +465,6 @@ export default function JobHistory() {
                             </button>
                           )}
 
-                          {/* Delete button */}
                           {confirmDelete === job.job_id ? (
                             <div className="flex gap-1">
                               <button
@@ -500,11 +502,7 @@ export default function JobHistory() {
               {filteredJobs.map((job) => (
                 <div
                   key={job.job_id}
-                  className={`bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl p-4 shadow-lg border ${
-                    isRunning(job.status)
-                      ? "border-blue-500/30"
-                      : "border-white/5"
-                  }`}
+                  className={`bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl p-4 shadow-lg border ${isRunning(job.status) ? "border-blue-500/30" : "border-white/5"}`}
                 >
                   <div className="flex justify-between items-start mb-3">
                     <div>
@@ -561,10 +559,12 @@ export default function JobHistory() {
 
                   <div className="flex gap-2 flex-wrap">
                     <button
-                      onClick={() => navigate(`/job/${job.job_id}`)}
+                      onClick={() => handleViewJob(job)}
                       className="flex-1 bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 rounded-xl text-sm transition border border-blue-500/30"
                     >
-                      View Leads →
+                      {job.status === "completed"
+                        ? "View Leads →"
+                        : "View Progress →"}
                     </button>
 
                     {isRunning(job.status) && (

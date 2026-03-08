@@ -1,29 +1,16 @@
-/**
- * llmService.js — LLM Integration (Week 3, Day 3)
- *
- * Uses OpenAI GPT-3.5-turbo (or Anthropic Claude via env flag) to:
- *   1. Detect business category from name + website content
- *   2. Detect social media presence quality
- *   3. Generate AI lead score (hot / warm / cold) with reasoning
- *
- * Prompts are kept tight (< 300 tokens input) for speed + cost.
- * Falls back gracefully if LLM is unavailable or key is missing.
- */
-
 const axios = require("axios");
 
-const LLM_ENABLED = !!process.env.OPENAI_API_KEY;
-const OPENAI_BASE = "https://api.openai.com/v1/chat/completions";
-const MODEL = "gpt-3.5-turbo";
-
-// ── Core LLM Call ─────────────────────────────────────────────────────────────
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const LLM_ENABLED = !!GROQ_API_KEY;
+const GROQ_BASE = "https://api.groq.com/openai/v1/chat/completions";
+const MODEL = "llama-3.1-8b-instant";
 
 async function callLLM(systemPrompt, userPrompt, maxTokens = 150) {
   if (!LLM_ENABLED) return null;
 
   try {
     const res = await axios.post(
-      OPENAI_BASE,
+      GROQ_BASE,
       {
         model: MODEL,
         max_tokens: maxTokens,
@@ -35,10 +22,10 @@ async function callLLM(systemPrompt, userPrompt, maxTokens = 150) {
       },
       {
         headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          Authorization: `Bearer ${GROQ_API_KEY}`,
           "Content-Type": "application/json",
         },
-        timeout: 10000,
+        timeout: 15000,
       },
     );
 
@@ -52,20 +39,15 @@ async function callLLM(systemPrompt, userPrompt, maxTokens = 150) {
   }
 }
 
-// ── Safe JSON Extractor ───────────────────────────────────────────────────────
-
 function parseJSON(text, fallback) {
   if (!text) return fallback;
   try {
-    // Strip markdown code fences if present
     const clean = text.replace(/```json|```/g, "").trim();
     return JSON.parse(clean);
   } catch {
     return fallback;
   }
 }
-
-// ── 1. Category Detection ─────────────────────────────────────────────────────
 
 const CATEGORY_LIST = [
   "Restaurant",
@@ -86,14 +68,7 @@ const CATEGORY_LIST = [
   "Other",
 ];
 
-/**
- * Detect business category using LLM or fallback heuristics.
- * @param {Object} lead - lead fields (businessName, category, website crawl data)
- * @param {Object} crawlData - result from crawler.js
- * @returns {string} normalized category
- */
 async function detectCategory(lead, crawlData = {}) {
-  // If category already looks good, normalize and return
   if (
     lead.category &&
     lead.category.length > 2 &&
@@ -102,7 +77,6 @@ async function detectCategory(lead, crawlData = {}) {
     return normalizeCategory(lead.category);
   }
 
-  // Build context string
   const context = [
     lead.businessName,
     crawlData.title || "",
@@ -127,62 +101,16 @@ async function detectCategory(lead, crawlData = {}) {
 
 function normalizeCategory(raw) {
   const lower = raw.toLowerCase();
-  if (
-    lower.includes("restaurant") ||
-    lower.includes("food") ||
-    lower.includes("cafe")
-  )
-    return "Restaurant";
-  if (
-    lower.includes("salon") ||
-    lower.includes("spa") ||
-    lower.includes("beauty")
-  )
-    return "Beauty & Wellness";
-  if (
-    lower.includes("gym") ||
-    lower.includes("fitness") ||
-    lower.includes("yoga")
-  )
-    return "Fitness";
-  if (
-    lower.includes("doctor") ||
-    lower.includes("clinic") ||
-    lower.includes("dental")
-  )
-    return "Healthcare";
-  if (
-    lower.includes("law") ||
-    lower.includes("attorney") ||
-    lower.includes("legal")
-  )
-    return "Legal";
-  if (lower.includes("real estate") || lower.includes("realty"))
-    return "Real Estate";
-  if (
-    lower.includes("auto") ||
-    lower.includes("car") ||
-    lower.includes("garage")
-  )
-    return "Automotive";
-  if (
-    lower.includes("school") ||
-    lower.includes("academy") ||
-    lower.includes("tutor")
-  )
-    return "Education";
-  if (
-    lower.includes("hotel") ||
-    lower.includes("motel") ||
-    lower.includes("inn")
-  )
-    return "Hospitality";
-  if (
-    lower.includes("construction") ||
-    lower.includes("plumbing") ||
-    lower.includes("electrician")
-  )
-    return "Construction";
+  if (/restaurant|food|cafe/.test(lower)) return "Restaurant";
+  if (/salon|spa|beauty/.test(lower)) return "Beauty & Wellness";
+  if (/gym|fitness|yoga/.test(lower)) return "Fitness";
+  if (/doctor|clinic|dental/.test(lower)) return "Healthcare";
+  if (/law|attorney|legal/.test(lower)) return "Legal";
+  if (/real estate|realty/.test(lower)) return "Real Estate";
+  if (/auto|car|garage/.test(lower)) return "Automotive";
+  if (/school|academy|tutor/.test(lower)) return "Education";
+  if (/hotel|motel|inn/.test(lower)) return "Hospitality";
+  if (/construction|plumbing|electrician/.test(lower)) return "Construction";
   return raw.length > 2 ? raw : "Other";
 }
 
@@ -204,16 +132,9 @@ function heuristicCategory(businessName = "", crawlData = {}) {
   return "Other";
 }
 
-// ── 2. Social Media Quality Analysis ─────────────────────────────────────────
-
-/**
- * Assess social media presence quality.
- * @param {Object} social - e.g. { facebook, instagram, linkedin }
- * @returns {Object} { score: 0-10, platforms: [], hasPresence: bool }
- */
 function analyzeSocialPresence(social = {}) {
   const platforms = Object.keys(social).filter((k) => social[k]);
-  const score = Math.min(platforms.length * 2.5, 10); // 0-10
+  const score = Math.min(platforms.length * 2.5, 10);
   return {
     platforms,
     platformCount: platforms.length,
@@ -225,25 +146,7 @@ function analyzeSocialPresence(social = {}) {
   };
 }
 
-// ── 3. AI Lead Scoring ────────────────────────────────────────────────────────
-
-/**
- * Generate AI lead score: hot / warm / cold
- *
- * Scoring logic (with LLM):
- *   hot  — has email + phone + website + social presence + high rating
- *   warm — has phone or website, partial data
- *   cold — minimal contact info
- *
- * Fallback heuristic used when LLM is off/fails.
- *
- * @param {Object} lead - lead fields
- * @param {Object} crawlData - crawler result
- * @param {Object} socialAnalysis - from analyzeSocialPresence()
- * @returns {{ score: "hot"|"warm"|"cold", reason: string, confidence: number }}
- */
 async function generateLeadScore(lead, crawlData = {}, socialAnalysis = {}) {
-  // Build context
   const context = {
     businessName: lead.businessName,
     hasPhone: !!lead.phone,
@@ -255,13 +158,11 @@ async function generateLeadScore(lead, crawlData = {}, socialAnalysis = {}) {
     category: lead.category || "Unknown",
   };
 
-  // LLM scoring
   if (LLM_ENABLED) {
     const system =
       `You are a B2B sales lead qualifier. Based on business data, return ONLY JSON: ` +
       `{"score": "hot"|"warm"|"cold", "reason": "one sentence", "confidence": 0-100}. ` +
-      `Hot = complete contact info + online presence + high rating. ` +
-      `Cold = missing most data.`;
+      `Hot = complete contact info + online presence + high rating. Cold = missing most data.`;
     const user = `Lead data: ${JSON.stringify(context)}`;
 
     const result = await callLLM(system, user, 100);
@@ -272,12 +173,11 @@ async function generateLeadScore(lead, crawlData = {}, socialAnalysis = {}) {
         score: parsed.score,
         reason: parsed.reason || "AI scored",
         confidence: parsed.confidence || 75,
-        method: "llm",
+        method: "groq",
       };
     }
   }
 
-  // Heuristic fallback
   return heuristicLeadScore(context);
 }
 

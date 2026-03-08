@@ -153,7 +153,7 @@ const scrapingWorker = new Worker(
         enrichmentJobs.push({
           name: "enrich-lead",
           data: { leadId: lead._id.toString(), jobId: jobId, userId: userId },
-          opts: { delay: i * 200 },
+          opts: { delay: i * 2000 },
         });
 
         const progress = Math.round(((i + 1) / scrapedLeads.length) * 100);

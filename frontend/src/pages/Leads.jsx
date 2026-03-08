@@ -1,31 +1,86 @@
-/**
- * Leads.jsx — Week 3 Frontend (Days 1-5)
- *
- * Full leads management page for a completed job:
- *   - Leads table with enriched data (email, category, score, social)
- *   - Filter bar: Rating, Category, Lead Score, Location search
- *   - Sort by any column (asc/desc)
- *   - Pagination
- *   - Real-time enrichment updates via SSE
- *   - Enrichment progress bar
- *   - Export CSV button (Week 4 will add filter-based export)
- */
-
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import LeadsTable from "../components/LeadsTable";
 import Navbar from "../components/Navbar";
 
 const API = "http://localhost:5000/api";
+const PYTHON_API = "http://localhost:8000";
 const getToken = () => localStorage.getItem("token");
 const authHeaders = () => ({ Authorization: `Bearer ${getToken()}` });
 
-// ── Filter Bar ────────────────────────────────────────────────────────────────
-function FilterBar({ filters, setFilters, categories, onReset }) {
+const isUUID = (id) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+const getLeadScoreFromRating = (rating) => {
+  if (!rating) return "cold";
+  const r = parseFloat(rating);
+  if (r >= 4.5) return "hot";
+  if (r >= 3.5) return "warm";
+  return "cold";
+};
+
+function FilterBar({ filters, setFilters, onReset }) {
   return (
     <div className="bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl p-4 border border-white/5 mb-6">
       <div className="flex flex-wrap gap-3 items-end">
-        {/* Search */}
+        <div className="flex-1 min-w-[200px]">
+          <label className="block text-xs text-gray-500 mb-1">Search</label>
+          <input
+            type="text"
+            placeholder="Name, phone, address..."
+            value={filters.search}
+            onChange={(e) =>
+              setFilters((f) => ({ ...f, search: e.target.value, page: 1 }))
+            }
+            className="w-full bg-[#0f1221] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500/50 transition-colors"
+          />
+        </div>
+        <div className="min-w-[120px]">
+          <label className="block text-xs text-gray-500 mb-1">Min Rating</label>
+          <select
+            value={filters.rating}
+            onChange={(e) =>
+              setFilters((f) => ({ ...f, rating: e.target.value, page: 1 }))
+            }
+            className="w-full bg-[#0f1221] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50 transition-colors"
+          >
+            <option value="">Any Rating</option>
+            <option value="4.5">★ 4.5+</option>
+            <option value="4.0">★ 4.0+</option>
+            <option value="3.5">★ 3.5+</option>
+            <option value="3.0">★ 3.0+</option>
+          </select>
+        </div>
+        <div className="min-w-[100px]">
+          <label className="block text-xs text-gray-500 mb-1">Per page</label>
+          <select
+            value={filters.limit}
+            onChange={(e) =>
+              setFilters((f) => ({ ...f, limit: e.target.value, page: 1 }))
+            }
+            className="w-full bg-[#0f1221] border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50 transition-colors"
+          >
+            <option value="10">10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </div>
+        <button
+          onClick={onReset}
+          className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors"
+        >
+          ✕ Reset
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FilterBarNode({ filters, setFilters, categories, onReset }) {
+  return (
+    <div className="bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl p-4 border border-white/5 mb-6">
+      <div className="flex flex-wrap gap-3 items-end">
         <div className="flex-1 min-w-[200px]">
           <label className="block text-xs text-gray-500 mb-1">Search</label>
           <input
@@ -38,8 +93,6 @@ function FilterBar({ filters, setFilters, categories, onReset }) {
             className="w-full bg-[#0f1221] border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500/50 transition-colors"
           />
         </div>
-
-        {/* Category */}
         <div className="min-w-[150px]">
           <label className="block text-xs text-gray-500 mb-1">Category</label>
           <select
@@ -57,8 +110,6 @@ function FilterBar({ filters, setFilters, categories, onReset }) {
             ))}
           </select>
         </div>
-
-        {/* Lead Score */}
         <div className="min-w-[130px]">
           <label className="block text-xs text-gray-500 mb-1">Lead Score</label>
           <select
@@ -74,8 +125,6 @@ function FilterBar({ filters, setFilters, categories, onReset }) {
             <option value="cold">❄️ Cold</option>
           </select>
         </div>
-
-        {/* Min Rating */}
         <div className="min-w-[120px]">
           <label className="block text-xs text-gray-500 mb-1">Min Rating</label>
           <select
@@ -92,8 +141,6 @@ function FilterBar({ filters, setFilters, categories, onReset }) {
             <option value="3.0">★ 3.0+</option>
           </select>
         </div>
-
-        {/* Results per page */}
         <div className="min-w-[100px]">
           <label className="block text-xs text-gray-500 mb-1">Per page</label>
           <select
@@ -109,8 +156,6 @@ function FilterBar({ filters, setFilters, categories, onReset }) {
             <option value="100">100</option>
           </select>
         </div>
-
-        {/* Reset */}
         <button
           onClick={onReset}
           className="px-4 py-2 text-sm text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors"
@@ -122,7 +167,6 @@ function FilterBar({ filters, setFilters, categories, onReset }) {
   );
 }
 
-// ── Stats Cards ───────────────────────────────────────────────────────────────
 function StatsCards({ stats }) {
   if (!stats) return null;
   return (
@@ -159,11 +203,9 @@ function StatsCards({ stats }) {
   );
 }
 
-// ── Pagination ────────────────────────────────────────────────────────────────
 function Pagination({ pagination, onPageChange }) {
   if (!pagination || pagination.totalPages <= 1) return null;
   const { currentPage, totalPages, totalLeads, limit } = pagination;
-
   return (
     <div className="flex flex-col sm:flex-row justify-between items-center gap-3 mt-4 pt-4 border-t border-white/5">
       <p className="text-gray-500 text-xs">
@@ -178,19 +220,13 @@ function Pagination({ pagination, onPageChange }) {
         >
           ← Prev
         </button>
-        {/* Page numbers */}
         <div className="flex gap-1">
           {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
             let page;
-            if (totalPages <= 5) {
-              page = i + 1;
-            } else if (currentPage <= 3) {
-              page = i + 1;
-            } else if (currentPage >= totalPages - 2) {
-              page = totalPages - 4 + i;
-            } else {
-              page = currentPage - 2 + i;
-            }
+            if (totalPages <= 5) page = i + 1;
+            else if (currentPage <= 3) page = i + 1;
+            else if (currentPage >= totalPages - 2) page = totalPages - 4 + i;
+            else page = currentPage - 2 + i;
             return (
               <button
                 key={page}
@@ -218,7 +254,6 @@ function Pagination({ pagination, onPageChange }) {
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
 const DEFAULT_FILTERS = {
   search: "",
   category: "",
@@ -235,6 +270,7 @@ export default function Leads() {
   const navigate = useNavigate();
 
   const [leads, setLeads] = useState([]);
+  const [allLeads, setAllLeads] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -242,11 +278,108 @@ export default function Leads() {
   const [enrichingLeadIds, setEnrichingLeadIds] = useState(new Set());
   const [enrichmentTriggered, setEnrichmentTriggered] = useState(false);
   const [job, setJob] = useState(null);
+  const [isPythonJob, setIsPythonJob] = useState(false);
 
   const sseRef = useRef(null);
   const debounceRef = useRef(null);
+  const statsIntervalRef = useRef(null);
 
-  // ── Fetch leads ─────────────────────────────────────────────────────────────
+  const normalizePythonLeads = (rawLeads) => {
+    return rawLeads.map((l, i) => ({
+      _id: `python-${i}`,
+      businessName: l.name || "Unknown",
+      phone: l.phone || null,
+      email: l.email || null,
+      website: l.website || null,
+      rating: l.rating ? parseFloat(l.rating) : null,
+      address: l.address || null,
+      category: l.category || null,
+      leadScore: l.lead_score || getLeadScoreFromRating(l.rating),
+      enriched: false,
+    }));
+  };
+
+  const applyClientFilters = (normalized, f) => {
+    let filtered = [...normalized];
+    if (f.search) {
+      const s = f.search.toLowerCase();
+      filtered = filtered.filter(
+        (l) =>
+          (l.businessName || "").toLowerCase().includes(s) ||
+          (l.phone || "").includes(s) ||
+          (l.address || "").toLowerCase().includes(s),
+      );
+    }
+    if (f.rating) {
+      filtered = filtered.filter(
+        (l) => l.rating && l.rating >= parseFloat(f.rating),
+      );
+    }
+    return filtered;
+  };
+
+  const fetchPythonJobLeads = useCallback(
+    async (f = filters) => {
+      try {
+        setLoading(true);
+        const token = getToken();
+        const res = await fetch(`${PYTHON_API}/scrape/${jobId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error("Failed to fetch Python job");
+        const data = await res.json();
+
+        const normalized = normalizePythonLeads(data.leads || []);
+        setAllLeads(normalized);
+
+        const filtered = applyClientFilters(normalized, f);
+        const totalLeads = filtered.length;
+        const limit = parseInt(f.limit);
+        const page = f.page;
+        const totalPages = Math.ceil(totalLeads / limit);
+        const paginated = filtered.slice((page - 1) * limit, page * limit);
+
+        setLeads(paginated);
+        setPagination({
+          currentPage: page,
+          totalPages,
+          totalLeads,
+          limit,
+          hasPrevPage: page > 1,
+          hasNextPage: page < totalPages,
+        });
+
+        const hotCount = normalized.filter((l) => l.leadScore === "hot").length;
+        const warmCount = normalized.filter(
+          (l) => l.leadScore === "warm",
+        ).length;
+        const coldCount = normalized.filter(
+          (l) => l.leadScore === "cold",
+        ).length;
+        const ratings = normalized.filter((l) => l.rating).map((l) => l.rating);
+        const avgRating = ratings.length
+          ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1)
+          : null;
+
+        setStats({
+          totalLeads: normalized.length,
+          enrichedLeads: 0,
+          enrichmentProgress: 0,
+          scores: { hot: hotCount, warm: warmCount, cold: coldCount },
+          rating: { avg: avgRating },
+          categories: [],
+        });
+
+        setJob({ keyword: data.keyword, location: data.location });
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [jobId],
+  );
+
   const fetchLeads = useCallback(
     async (f = filters) => {
       try {
@@ -261,7 +394,6 @@ export default function Leads() {
           ...(f.leadScore && { leadScore: f.leadScore }),
           ...(f.rating && { rating: f.rating }),
         });
-
         const res = await fetch(`${API}/leads/${jobId}?${params}`, {
           headers: authHeaders(),
         });
@@ -278,7 +410,6 @@ export default function Leads() {
     [jobId],
   );
 
-  // ── Fetch stats ──────────────────────────────────────────────────────────────
   const fetchStats = useCallback(async () => {
     try {
       const res = await fetch(`${API}/leads/${jobId}/stats`, {
@@ -290,7 +421,6 @@ export default function Leads() {
     } catch {}
   }, [jobId]);
 
-  // ── Fetch job info ───────────────────────────────────────────────────────────
   const fetchJob = useCallback(async () => {
     try {
       const res = await fetch(`${API}/jobs/${jobId}`, {
@@ -302,60 +432,66 @@ export default function Leads() {
     } catch {}
   }, [jobId]);
 
-  // ── Initial load ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    fetchLeads();
-    fetchStats();
-    fetchJob();
-  }, []);
+    const python = isUUID(jobId);
+    setIsPythonJob(python);
+    if (python) {
+      fetchPythonJobLeads(DEFAULT_FILTERS);
+    } else {
+      fetchLeads();
+      fetchStats();
+      fetchJob();
+      // Auto-refresh stats every 5 seconds for enrichment progress
+      statsIntervalRef.current = setInterval(() => {
+        fetchStats();
+      }, 5000);
+    }
+    return () => {
+      clearInterval(statsIntervalRef.current);
+    };
+  }, [jobId]);
 
-  // ── Debounced filter re-fetch ─────────────────────────────────────────────
   useEffect(() => {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      fetchLeads(filters);
+      if (isPythonJob) {
+        fetchPythonJobLeads(filters);
+      } else {
+        fetchLeads(filters);
+      }
     }, 350);
     return () => clearTimeout(debounceRef.current);
   }, [filters]);
 
-  // ── SSE: Real-time enrichment updates ─────────────────────────────────────
   useEffect(() => {
+    if (isPythonJob) return;
     const token = getToken();
     const url = `${API.replace("/api", "")}/api/sse/${jobId}/enrichment`;
     const es = new EventSource(`${url}?token=${token}`);
-
     es.onmessage = (e) => {
       const msg = JSON.parse(e.data);
-
       if (msg.type === "enrichment_update") {
         const { leadId } = msg.data;
-
-        // Mark lead as "enriching" briefly then refresh
         setEnrichingLeadIds((prev) => new Set([...prev, leadId]));
-
         setTimeout(() => {
           setEnrichingLeadIds((prev) => {
             const next = new Set(prev);
             next.delete(leadId);
             return next;
           });
-          // Refresh this lead in the table
           setLeads((prev) =>
             prev.map((l) =>
               l._id === leadId ? { ...l, ...msg.data, enriched: true } : l,
             ),
           );
-          // Refresh stats periodically
           fetchStats();
         }, 1500);
       }
     };
-
     sseRef.current = es;
     return () => es.close();
-  }, [jobId]);
+  }, [jobId, isPythonJob]);
 
-  // ── Sort handler ──────────────────────────────────────────────────────────
   const handleSort = (field) => {
     setFilters((f) => ({
       ...f,
@@ -365,7 +501,6 @@ export default function Leads() {
     }));
   };
 
-  // ── Trigger enrichment ────────────────────────────────────────────────────
   const triggerEnrichment = async () => {
     try {
       const res = await fetch(`${API}/leads/${jobId}/enrich`, {
@@ -380,9 +515,9 @@ export default function Leads() {
     }
   };
 
-  // ── CSV Export (basic — Week 4 will add filter support) ───────────────────
   const exportCSV = () => {
-    if (!leads.length) return;
+    const exportLeads = isPythonJob ? allLeads : leads;
+    if (!exportLeads.length) return;
     const headers = [
       "Business Name",
       "Phone",
@@ -393,7 +528,7 @@ export default function Leads() {
       "Lead Score",
       "Address",
     ];
-    const rows = leads.map((l) =>
+    const rows = exportLeads.map((l) =>
       [
         l.businessName,
         l.phone || "",
@@ -405,7 +540,6 @@ export default function Leads() {
         l.address || "",
       ].map((v) => `"${String(v).replace(/"/g, '""')}"`),
     );
-
     const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -419,9 +553,7 @@ export default function Leads() {
   return (
     <div className="min-h-screen bg-[#0a0d1a]">
       <Navbar />
-
       <div className="p-4 md:p-8 max-w-7xl mx-auto">
-        {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <div>
             <button
@@ -436,17 +568,24 @@ export default function Leads() {
                 🔍 {job.keyword} in {job.location}
               </p>
             )}
+            {isPythonJob && (
+              <span className="text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 px-2 py-1 rounded-full mt-1 inline-block">
+                Legacy Job — Enrichment not available
+              </span>
+            )}
           </div>
           <div className="flex gap-2">
-            {stats && stats.enrichedLeads < stats.totalLeads && (
-              <button
-                onClick={triggerEnrichment}
-                disabled={enrichmentTriggered}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                🤖 {enrichmentTriggered ? "Enriching…" : "Enrich All"}
-              </button>
-            )}
+            {!isPythonJob &&
+              stats &&
+              stats.enrichedLeads < stats.totalLeads && (
+                <button
+                  onClick={triggerEnrichment}
+                  disabled={enrichmentTriggered}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  🤖 {enrichmentTriggered ? "Enriching…" : "Enrich All"}
+                </button>
+              )}
             <button
               onClick={exportCSV}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm bg-green-500/20 border border-green-500/30 text-green-400 hover:bg-green-500/30 transition-colors"
@@ -456,18 +595,23 @@ export default function Leads() {
           </div>
         </div>
 
-        {/* Stats Cards */}
         <StatsCards stats={stats} />
 
-        {/* Filter Bar */}
-        <FilterBar
-          filters={filters}
-          setFilters={setFilters}
-          categories={stats?.categories || []}
-          onReset={() => setFilters(DEFAULT_FILTERS)}
-        />
+        {isPythonJob ? (
+          <FilterBar
+            filters={filters}
+            setFilters={setFilters}
+            onReset={() => setFilters(DEFAULT_FILTERS)}
+          />
+        ) : (
+          <FilterBarNode
+            filters={filters}
+            setFilters={setFilters}
+            categories={stats?.categories || []}
+            onReset={() => setFilters(DEFAULT_FILTERS)}
+          />
+        )}
 
-        {/* Active filters summary */}
         {(filters.search ||
           filters.category ||
           filters.leadScore ||
@@ -496,7 +640,6 @@ export default function Leads() {
           </div>
         )}
 
-        {/* Leads Table */}
         <LeadsTable
           leads={leads}
           loading={loading}
@@ -506,7 +649,6 @@ export default function Leads() {
           sortOrder={filters.sortOrder}
         />
 
-        {/* Pagination */}
         <Pagination
           pagination={pagination}
           onPageChange={(p) => setFilters((f) => ({ ...f, page: p }))}

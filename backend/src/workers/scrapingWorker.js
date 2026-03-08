@@ -1,14 +1,3 @@
-/**
- * scrapingWorker.js — UPDATED Week 3, Day 5
- *
- * Replaces the Week 2 version. Changes:
- *   - Caches progress in Redis on every update
- *   - Dispatches enrichment jobs to enrichmentQueue after scraping
- *   - Improved failure recovery with retry/backoff
- *   - Broadcasts SSE progress updates via sseController
- *   - Cleans up Redis cache on job completion/failure
- */
-
 const { Worker } = require("bullmq");
 const redisClient = require("../config/redis");
 const { cacheJobProgress, deleteJobProgressCache } = require("../config/redis");
@@ -20,17 +9,14 @@ const { broadcastJobProgress } = require("../controllers/sseController");
 
 const PYTHON_API_URL = process.env.PYTHON_API_URL || "http://127.0.0.1:8000";
 
-// ── Worker ────────────────────────────────────────────────────────────────────
-
 const scrapingWorker = new Worker(
   "scraping-jobs",
   async (job) => {
     const { jobId, userId, keyword, location, numberOfLeads } = job.data;
 
     try {
-      console.log(`🔄 Processing job: ${jobId}`);
+      console.log("🔄 Processing job: " + jobId);
 
-      // ── Mark running + cache initial progress ────────────────────────────
       await Job.findByIdAndUpdate(jobId, { status: "running", progress: 0 });
       await cacheJobProgress(jobId, {
         status: "running",
@@ -45,22 +31,86 @@ const scrapingWorker = new Worker(
           status: "running",
           progress: 0,
           leadsScraped: 0,
-          numberOfLeads,
+          numberOfLeads: numberOfLeads,
         },
       });
 
-      // ── Call Python scraper ───────────────────────────────────────────────
       console.log(
-        `📡 Calling Python scraper for "${keyword}" in "${location}"...`,
-      );
-      const response = await axios.post(
-        `${PYTHON_API_URL}/scrape`,
-        { keyword, location, count: numberOfLeads },
-        { timeout: 300000 }, // 5 min timeout for large jobs
+        "📡 Calling Python scraper for " + keyword + " in " + location,
       );
 
-      const scrapedLeads = response.data.leads || [];
-      console.log(`✅ Scraped ${scrapedLeads.length} leads from Python`);
+      const response = await axios.post(
+        PYTHON_API_URL + "/scrape/",
+        { keyword: keyword, location: location, count: numberOfLeads },
+        { timeout: 30000 },
+      );
+
+      const pythonJobId = response.data.job_id;
+      console.log("🐍 Python job started: " + pythonJobId);
+
+      var scrapedLeads = [];
+      var attempts = 0;
+      var maxAttempts = 120;
+
+      while (attempts < maxAttempts) {
+        await new Promise(function (r) {
+          setTimeout(r, 3000);
+        });
+
+        const statusRes = await axios.get(
+          PYTHON_API_URL + "/scrape/" + pythonJobId,
+          {
+            timeout: 10000,
+            headers: { Authorization: "Bearer internal" },
+          },
+        );
+        const statusData = statusRes.data;
+
+        console.log(
+          "📊 Python job status: " +
+            statusData.status +
+            " | leads: " +
+            (statusData.leads ? statusData.leads.length : 0),
+        );
+
+        const progress = statusData.progress || 0;
+        const leadsScraped = statusData.leads ? statusData.leads.length : 0;
+
+        await Job.findByIdAndUpdate(jobId, {
+          progress: progress,
+          leadsScraped: leadsScraped,
+        });
+        await cacheJobProgress(jobId, {
+          status: "running",
+          progress: progress,
+          leadsScraped: leadsScraped,
+          numberOfLeads: numberOfLeads,
+        });
+
+        broadcastJobProgress(userId, {
+          type: "update",
+          job: {
+            id: jobId,
+            status: "running",
+            progress: progress,
+            leadsScraped: leadsScraped,
+            numberOfLeads: numberOfLeads,
+          },
+        });
+
+        if (statusData.status === "completed") {
+          scrapedLeads = statusData.leads || [];
+          break;
+        }
+
+        if (statusData.status === "failed" || statusData.status === "error") {
+          throw new Error("Python scraper failed");
+        }
+
+        attempts++;
+      }
+
+      console.log("✅ Scraped " + scrapedLeads.length + " leads from Python");
 
       if (scrapedLeads.length === 0) {
         await Job.findByIdAndUpdate(jobId, {
@@ -78,19 +128,17 @@ const scrapingWorker = new Worker(
             leadsScraped: 0,
           },
         });
-        return { success: true, jobId, leadsCount: 0 };
+        return { success: true, jobId: jobId, leadsCount: 0 };
       }
 
-      // ── Save leads + dispatch enrichment jobs ─────────────────────────────
-      const enrichmentJobs = [];
+      var enrichmentJobs = [];
 
-      for (let i = 0; i < scrapedLeads.length; i++) {
+      for (var i = 0; i < scrapedLeads.length; i++) {
         const leadData = scrapedLeads[i];
 
-        // Save lead to MongoDB
         const lead = await Lead.create({
-          jobId,
-          userId,
+          jobId: jobId,
+          userId: userId,
           businessName: leadData.name || "Unknown",
           phone: leadData.phone || null,
           website: leadData.website || null,
@@ -98,47 +146,50 @@ const scrapingWorker = new Worker(
           rating: leadData.rating ? parseFloat(leadData.rating) : null,
           address: leadData.address || null,
           category: leadData.category || null,
-          leadScore: "warm", // enrichment worker will update this
+          leadScore: "warm",
           enriched: false,
         });
 
-        // Queue enrichment job for this lead
         enrichmentJobs.push({
           name: "enrich-lead",
-          data: { leadId: lead._id.toString(), jobId, userId },
-          opts: { delay: i * 200 }, // stagger to avoid rate limits
+          data: { leadId: lead._id.toString(), jobId: jobId, userId: userId },
+          opts: { delay: i * 200 },
         });
 
-        // ── Update progress ──────────────────────────────────────────────
         const progress = Math.round(((i + 1) / scrapedLeads.length) * 100);
-        const progressData = {
-          status: "running",
-          progress,
-          leadsScraped: i + 1,
-          numberOfLeads,
-        };
 
-        await Job.findByIdAndUpdate(jobId, { progress, leadsScraped: i + 1 });
-        await cacheJobProgress(jobId, progressData);
+        await Job.findByIdAndUpdate(jobId, {
+          progress: progress,
+          leadsScraped: i + 1,
+        });
+        await cacheJobProgress(jobId, {
+          status: "running",
+          progress: progress,
+          leadsScraped: i + 1,
+          numberOfLeads: numberOfLeads,
+        });
         await job.updateProgress(progress);
 
         broadcastJobProgress(userId, {
           type: "update",
-          job: { id: jobId, ...progressData },
+          job: {
+            id: jobId,
+            status: "running",
+            progress: progress,
+            leadsScraped: i + 1,
+            numberOfLeads: numberOfLeads,
+          },
         });
       }
 
-      // ── Dispatch all enrichment jobs in bulk ──────────────────────────────
       await enrichmentQueue.addBulk(enrichmentJobs);
-      console.log(`📬 Queued ${enrichmentJobs.length} enrichment jobs`);
+      console.log("📬 Queued " + enrichmentJobs.length + " enrichment jobs");
 
-      // ── Mark job as completed ─────────────────────────────────────────────
       await Job.findByIdAndUpdate(jobId, {
         status: "completed",
         progress: 100,
         leadsScraped: scrapedLeads.length,
       });
-
       await deleteJobProgressCache(jobId);
 
       broadcastJobProgress(userId, {
@@ -153,17 +204,22 @@ const scrapingWorker = new Worker(
       });
 
       console.log(
-        `✅ Job completed: ${jobId} | ${scrapedLeads.length} leads | ${enrichmentJobs.length} enrichments queued`,
+        "✅ Job completed: " +
+          jobId +
+          " | " +
+          scrapedLeads.length +
+          " leads | " +
+          enrichmentJobs.length +
+          " enrichments queued",
       );
-      return { success: true, jobId, leadsCount: scrapedLeads.length };
+      return { success: true, jobId: jobId, leadsCount: scrapedLeads.length };
     } catch (error) {
-      console.error(`❌ Job failed: ${jobId}`, error.message);
+      console.error("❌ Job failed: " + jobId, error.message);
 
       await Job.findByIdAndUpdate(jobId, {
         status: "failed",
         errorMessage: error.message,
       });
-
       await deleteJobProgressCache(jobId);
 
       broadcastJobProgress(userId, {
@@ -174,23 +230,21 @@ const scrapingWorker = new Worker(
       throw error;
     }
   },
-  {
-    connection: redisClient,
-    concurrency: 5,
-  },
+  { connection: redisClient, concurrency: 5 },
 );
 
-// ── Worker Event Listeners ────────────────────────────────────────────────────
-
-scrapingWorker.on("completed", (job) => {
-  console.log(`✅ Worker completed job: ${job.id}`);
+scrapingWorker.on("completed", function (job) {
+  console.log("✅ Worker completed job: " + job.id);
 });
 
-scrapingWorker.on("failed", (job, err) => {
-  console.error(`❌ Worker failed job: ${job?.id}`, err.message);
+scrapingWorker.on("failed", function (job, err) {
+  console.error(
+    "❌ Worker failed job: " + (job ? job.id : "unknown"),
+    err.message,
+  );
 });
 
-scrapingWorker.on("error", (err) => {
+scrapingWorker.on("error", function (err) {
   console.error("❌ Worker error:", err.message);
 });
 

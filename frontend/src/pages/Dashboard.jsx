@@ -17,18 +17,16 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchStats();
-    // Auto-refresh har 5 seconds (jab active jobs hon)
     intervalRef.current = setInterval(() => {
-      fetchStats(true); // silent refresh
+      fetchStats(true);
     }, 5000);
-
     return () => clearInterval(intervalRef.current);
   }, []);
 
   const fetchStats = async (silent = false) => {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:8000/scrape/stats", {
+      const res = await fetch("http://localhost:5000/api/jobs/stats", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -209,7 +207,6 @@ export default function Dashboard() {
                 )}
               </div>
               <div className="flex items-center gap-3">
-                {/* Active jobs pulse indicator */}
                 {stats.active_jobs > 0 && (
                   <div className="flex items-center gap-2 bg-blue-500/20 border border-blue-500/30 px-3 py-1.5 rounded-full">
                     <span className="relative flex h-2 w-2">
@@ -278,7 +275,6 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Active jobs quick view */}
             {stats.active_jobs > 0 && (
               <div className="mt-4 pt-4 border-t border-white/5">
                 <button

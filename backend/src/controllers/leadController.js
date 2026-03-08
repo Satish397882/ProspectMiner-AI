@@ -1,19 +1,7 @@
-/**
- * leadController.js — UPDATED Week 3
- *
- * New endpoints:
- *   GET  /api/leads/:jobId        — paginated, filtered, sorted leads table
- *   GET  /api/leads/:jobId/stats  — category/score breakdown for filters UI
- *   POST /api/leads/:jobId/enrich — manually trigger enrichment for all leads
- *   GET  /api/leads/lead/:leadId  — single lead detail
- */
-
 const Lead = require("../models/Lead");
 const Job = require("../models/Job");
+const mongoose = require("mongoose");
 const { enrichmentQueue } = require("../config/queue");
-
-// ── GET /api/leads/:jobId ─────────────────────────────────────────────────────
-// Supports: page, limit, rating, category, leadScore, search, sortBy, sortOrder
 
 exports.getLeads = async (req, res) => {
   try {
@@ -30,11 +18,9 @@ exports.getLeads = async (req, res) => {
       sortOrder = "desc",
     } = req.query;
 
-    // Verify job belongs to user
     const job = await Job.findOne({ _id: jobId, userId: req.userId });
     if (!job) return res.status(404).json({ error: "Job not found" });
 
-    // ── Build filter ──────────────────────────────────────────────────────
     const filter = { jobId, userId: req.userId };
 
     if (rating) filter.rating = { $gte: parseFloat(rating) };
@@ -52,7 +38,6 @@ exports.getLeads = async (req, res) => {
       ];
     }
 
-    // ── Sort ──────────────────────────────────────────────────────────────
     const ALLOWED_SORT = [
       "createdAt",
       "rating",
@@ -62,15 +47,17 @@ exports.getLeads = async (req, res) => {
     ];
     const sortField = ALLOWED_SORT.includes(sortBy) ? sortBy : "createdAt";
     const sortDir = sortOrder === "asc" ? 1 : -1;
-    const sort = { [sortField]: sortDir };
 
-    // ── Query ─────────────────────────────────────────────────────────────
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
     const skip = (pageNum - 1) * limitNum;
 
     const [leads, total] = await Promise.all([
-      Lead.find(filter).sort(sort).skip(skip).limit(limitNum).lean(),
+      Lead.find(filter)
+        .sort({ [sortField]: sortDir })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
       Lead.countDocuments(filter),
     ]);
 
@@ -84,53 +71,46 @@ exports.getLeads = async (req, res) => {
         hasNextPage: pageNum < Math.ceil(total / limitNum),
         hasPrevPage: pageNum > 1,
       },
-      filters: {
-        rating,
-        category,
-        leadScore,
-        location,
-        search,
-        sortBy,
-        sortOrder,
-      },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-// ── GET /api/leads/:jobId/stats ───────────────────────────────────────────────
-// Returns aggregated stats for filter dropdowns + summary cards
-
 exports.getLeadStats = async (req, res) => {
   try {
     const { jobId } = req.params;
+    const userId = req.userId;
 
-    const job = await Job.findOne({ _id: jobId, userId: req.userId });
+    const job = await Job.findOne({ _id: jobId, userId });
     if (!job) return res.status(404).json({ error: "Job not found" });
 
-    const [categoryAgg, scoreAgg, ratingAgg, enrichedCount] = await Promise.all(
-      [
-        // Category breakdown
+    // jobId ko string aur ObjectId dono se match karo
+    const jobObjectId = new mongoose.Types.ObjectId(jobId);
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const matchStage = {
+      $or: [
+        { jobId: jobId, userId: userId },
+        { jobId: jobObjectId, userId: userObjectId },
+        { jobId: jobId, userId: userObjectId },
+        { jobId: jobObjectId, userId: userId },
+      ],
+    };
+
+    const [categoryAgg, scoreAgg, ratingAgg, totalLeads, enrichedCount] =
+      await Promise.all([
         Lead.aggregate([
-          { $match: { jobId: job._id, userId: req.userId } },
+          { $match: matchStage },
           { $group: { _id: "$category", count: { $sum: 1 } } },
           { $sort: { count: -1 } },
         ]),
-        // Lead score breakdown
         Lead.aggregate([
-          { $match: { jobId: job._id, userId: req.userId } },
+          { $match: matchStage },
           { $group: { _id: "$leadScore", count: { $sum: 1 } } },
         ]),
-        // Rating distribution
         Lead.aggregate([
-          {
-            $match: {
-              jobId: job._id,
-              userId: req.userId,
-              rating: { $ne: null },
-            },
-          },
+          { $match: { ...matchStage, rating: { $ne: null, $exists: true } } },
           {
             $group: {
               _id: null,
@@ -139,12 +119,9 @@ exports.getLeadStats = async (req, res) => {
             },
           },
         ]),
-        // Enriched count
-        Lead.countDocuments({ jobId, userId: req.userId, enriched: true }),
-      ],
-    );
-
-    const totalLeads = await Lead.countDocuments({ jobId, userId: req.userId });
+        Lead.countDocuments({ jobId, userId }),
+        Lead.countDocuments({ jobId, userId, enriched: true }),
+      ]);
 
     res.json({
       totalLeads,
@@ -172,9 +149,6 @@ exports.getLeadStats = async (req, res) => {
   }
 };
 
-// ── POST /api/leads/:jobId/enrich ─────────────────────────────────────────────
-// Manually trigger enrichment for all un-enriched leads in a job
-
 exports.triggerEnrichment = async (req, res) => {
   try {
     const { jobId } = req.params;
@@ -182,14 +156,12 @@ exports.triggerEnrichment = async (req, res) => {
     const job = await Job.findOne({ _id: jobId, userId: req.userId });
     if (!job) return res.status(404).json({ error: "Job not found" });
 
-    // Only enrich completed jobs
     if (job.status !== "completed") {
       return res
         .status(400)
         .json({ error: "Job must be completed before enrichment" });
     }
 
-    // Get all un-enriched leads
     const leads = await Lead.find({
       jobId,
       userId: req.userId,
@@ -202,7 +174,6 @@ exports.triggerEnrichment = async (req, res) => {
       return res.json({ message: "All leads already enriched", queued: 0 });
     }
 
-    // Queue enrichment jobs with staggered delays
     const jobs = leads.map((lead, i) => ({
       name: "enrich-lead",
       data: {
@@ -223,8 +194,6 @@ exports.triggerEnrichment = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
-// ── GET /api/leads/lead/:leadId ───────────────────────────────────────────────
 
 exports.getLead = async (req, res) => {
   try {

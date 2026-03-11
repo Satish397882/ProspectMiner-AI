@@ -85,7 +85,7 @@ export default function Analytics() {
 
   useEffect(() => {
     const token = localStorage.getItem("token");
-    fetch("http://localhost:8000/scrape/analytics", {
+    fetch("http://localhost:5000/api/jobs/analytics", {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => r.json())

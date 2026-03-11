@@ -136,19 +136,30 @@ const scrapingWorker = new Worker(
       for (var i = 0; i < scrapedLeads.length; i++) {
         const leadData = scrapedLeads[i];
 
-        const lead = await Lead.create({
-          jobId: jobId,
-          userId: userId,
-          businessName: leadData.name || "Unknown",
-          phone: leadData.phone || null,
-          website: leadData.website || null,
-          email: leadData.email || null,
-          rating: leadData.rating ? parseFloat(leadData.rating) : null,
-          address: leadData.address || null,
-          category: leadData.category || null,
-          leadScore: "warm",
-          enriched: false,
-        });
+        // Duplicate prevention — same job + name + phone = same lead
+        const lead = await Lead.findOneAndUpdate(
+          {
+            jobId: jobId,
+            businessName: leadData.name || "Unknown",
+            phone: leadData.phone || null,
+          },
+          {
+            $setOnInsert: {
+              jobId: jobId,
+              userId: userId,
+              businessName: leadData.name || "Unknown",
+              phone: leadData.phone || null,
+              website: leadData.website || null,
+              email: leadData.email || null,
+              rating: leadData.rating ? parseFloat(leadData.rating) : null,
+              address: leadData.address || null,
+              category: leadData.category || null,
+              leadScore: "warm",
+              enriched: false,
+            },
+          },
+          { upsert: true, returnDocument: "after" },
+        );
 
         enrichmentJobs.push({
           name: "enrich-lead",

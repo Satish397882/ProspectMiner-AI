@@ -1,17 +1,3 @@
-/**
- * enrichmentWorker.js — Week 3, Day 4
- *
- * BullMQ worker that processes enrichment jobs for individual leads.
- * For each lead it:
- *   1. Crawls the business website (crawler.js)
- *   2. Detects category via LLM / heuristics (llmService.js)
- *   3. Analyzes social media presence
- *   4. Generates AI lead score (hot/warm/cold)
- *   5. Updates the Lead document in MongoDB
- *   6. Broadcasts enrichment update via SSE
- *   7. Caches result in Redis
- */
-
 const { Worker } = require("bullmq");
 const redisClient = require("../config/redis");
 const { cacheEnrichmentResult } = require("../config/redis");
@@ -24,8 +10,6 @@ const {
 } = require("../services/llmService");
 const { broadcastEnrichmentUpdate } = require("../controllers/sseController");
 
-// ── Worker ────────────────────────────────────────────────────────────────────
-
 const enrichmentWorker = new Worker(
   "enrichment-jobs",
   async (job) => {
@@ -34,14 +18,12 @@ const enrichmentWorker = new Worker(
     try {
       console.log(`🔍 Enriching lead: ${leadId}`);
 
-      // Load lead from DB
       const lead = await Lead.findById(leadId);
       if (!lead) {
         console.warn(`⚠️ Lead not found: ${leadId}`);
         return { skipped: true };
       }
 
-      // ── Step 1: Website Crawl ────────────────────────────────────────────
       let crawlData = {};
       if (lead.website) {
         crawlData = await crawlWebsite(lead.website);
@@ -50,7 +32,6 @@ const enrichmentWorker = new Worker(
         );
       }
 
-      // ── Step 2: Category Detection ───────────────────────────────────────
       const detectedCategory = await detectCategory(
         {
           businessName: lead.businessName,
@@ -60,24 +41,18 @@ const enrichmentWorker = new Worker(
         crawlData,
       );
 
-      // ── Step 3: Social Media Analysis ────────────────────────────────────
       const socialAnalysis = analyzeSocialPresence(crawlData.social || {});
 
-      // ── Step 4: Lead Scoring ─────────────────────────────────────────────
       const leadScoreResult = await generateLeadScore(
         lead,
         crawlData,
         socialAnalysis,
       );
 
-      // ── Step 5: Build enrichment patch ───────────────────────────────────
       const patch = {
-        // Enriched contact data
         email: lead.email || crawlData.primaryEmail || null,
         category: detectedCategory,
         leadScore: leadScoreResult.score,
-
-        // Enrichment metadata (stored in enrichmentData field)
         enrichmentData: {
           crawl: {
             success: crawlData.success || false,
@@ -91,20 +66,16 @@ const enrichmentWorker = new Worker(
           score: leadScoreResult,
           enrichedAt: new Date().toISOString(),
         },
-
         enriched: true,
         enrichedAt: new Date(),
       };
 
-      // ── Step 6: Persist to MongoDB ───────────────────────────────────────
       const updatedLead = await Lead.findByIdAndUpdate(leadId, patch, {
-        new: true,
+        returnDocument: "after",
       });
 
-      // ── Step 7: Cache enrichment result in Redis ──────────────────────────
       await cacheEnrichmentResult(leadId, patch.enrichmentData);
 
-      // ── Step 8: Broadcast SSE update to connected frontend ───────────────
       broadcastEnrichmentUpdate(userId, jobId, {
         leadId,
         businessName: lead.businessName,
@@ -128,16 +99,16 @@ const enrichmentWorker = new Worker(
       };
     } catch (err) {
       console.error(`❌ Enrichment failed for lead ${leadId}:`, err.message);
-      throw err; // BullMQ will retry based on queue config
+      throw err;
     }
   },
   {
     connection: redisClient,
-    concurrency: 3, // process 3 leads at once
+    concurrency: 1,
+    lockDuration: 300000,
+    lockRenewTime: 60000,
   },
 );
-
-// ── Worker Event Listeners ────────────────────────────────────────────────────
 
 enrichmentWorker.on("completed", (job, result) => {
   console.log(

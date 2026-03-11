@@ -31,10 +31,6 @@ async function callLLM(systemPrompt, userPrompt, maxTokens = 150) {
 
     return res.data.choices?.[0]?.message?.content?.trim() || null;
   } catch (err) {
-    console.error(
-      "❌ LLM call failed:",
-      err.response?.data?.error?.message || err.message,
-    );
     return null;
   }
 }

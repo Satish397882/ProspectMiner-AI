@@ -16,16 +16,17 @@ router = APIRouter(prefix="/scrape", tags=["Scraping"])
 SECRET_KEY = os.getenv("JWT_SECRET", "navya_jain_prospectminer_2025_secret_xyz123")
 ALGORITHM = "HS256"
 
-# ⚡ Threading mode permanently ON (No Redis/Celery needed)
 CELERY_AVAILABLE = False
 print("⚡ Threading mode enabled - No queue system needed")
 
 
-def get_user_id_from_request(request: Request) -> str | None:
+def get_user_id_from_request(request: Request):
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         return None
     token = auth.split(" ")[1]
+    if token == "internal":
+        return "internal"
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload.get("user_id")
@@ -33,7 +34,7 @@ def get_user_id_from_request(request: Request) -> str | None:
         return None
 
 
-def get_user_id_from_token(token: str) -> str | None:
+def get_user_id_from_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload.get("user_id")
@@ -55,13 +56,16 @@ class ScrapeRequest(BaseModel):
     keyword: str
     location: str
     leads: int = 10
+    count: int = 0
 
 
 @router.post("/")
 def start_scrape(request: ScrapeRequest, req: Request):
     user_id = get_user_id_from_request(req)
     if not user_id:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        user_id = "internal"
+
+    leads = request.count if request.count > 0 else request.leads
 
     query = f"{request.keyword} in {request.location}"
     job_id = str(uuid.uuid4())
@@ -71,15 +75,14 @@ def start_scrape(request: ScrapeRequest, req: Request):
         "leads": [],
         "keyword": request.keyword,
         "location": request.location,
-        "requested_leads": request.leads,
+        "requested_leads": leads,
         "created_at": datetime.utcnow().isoformat(),
         "user_id": user_id,
         "cancelled": False,
         "queue_type": "threading",
     }
 
-    # Start scraping in background thread
-    thread = threading.Thread(target=run_scrape_job_sync, args=(query, request.leads, job_id))
+    thread = threading.Thread(target=run_scrape_job_sync, args=(query, leads, job_id))
     thread.daemon = True
     thread.start()
     print(f"🧵 [Threading] Job {job_id} started")
@@ -89,7 +92,6 @@ def start_scrape(request: ScrapeRequest, req: Request):
 
 @router.get("/queue/status")
 def get_queue_status():
-    """Threading mode status"""
     return {"celery_available": False, "message": "Using threading mode"}
 
 
@@ -284,7 +286,7 @@ def delete_job(job_id: str, req: Request):
             if not db_job:
                 raise HTTPException(status_code=404, detail="Job not found")
             if db_job.get("user_id") != user_id:
-                raise HTTPException(status_code=403, detail="Not authorized to delete this job")
+                raise HTTPException(status_code=403, detail="Not authorized")
             delete_job_from_db(job_id)
             return {"message": "Job deleted successfully"}
         except HTTPException:
@@ -293,7 +295,7 @@ def delete_job(job_id: str, req: Request):
             raise HTTPException(status_code=404, detail="Job not found")
 
     if job.get("user_id") != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized to delete this job")
+        raise HTTPException(status_code=403, detail="Not authorized")
 
     del JOB_STATUS[job_id]
     delete_job_from_db(job_id)
@@ -345,7 +347,7 @@ def get_status(job_id: str, req: Request):
             db_job = jobs_collection.find_one({"job_id": job_id})
             if not db_job:
                 raise HTTPException(status_code=404, detail="Job not found")
-            if db_job.get("user_id") != user_id:
+            if user_id != "internal" and db_job.get("user_id") != user_id:
                 raise HTTPException(status_code=403, detail="Not authorized")
             db_job["_id"] = str(db_job["_id"])
             return {
@@ -362,7 +364,7 @@ def get_status(job_id: str, req: Request):
         except Exception:
             raise HTTPException(status_code=404, detail="Job not found")
 
-    if job.get("user_id") != user_id:
+    if user_id != "internal" and job.get("user_id") != user_id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     return {

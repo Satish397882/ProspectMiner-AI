@@ -17,21 +17,29 @@ export default function JobHistory() {
 
   useEffect(() => {
     fetchHistory();
-    // Auto-poll har 3 seconds for live progress
-    intervalRef.current = setInterval(() => {
-      fetchHistory(true); // silent
-    }, 3000);
+    intervalRef.current = setInterval(() => fetchHistory(true), 3000);
     return () => clearInterval(intervalRef.current);
   }, []);
 
   const fetchHistory = async (silent = false) => {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:8000/scrape/history", {
+      const res = await fetch("http://localhost:5000/api/jobs", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      setJobs(data.jobs || []);
+      const normalized = (data.jobs || []).map((job) => ({
+        job_id: job._id?.toString(),
+        navigateId: job.navigateId || job._id?.toString(),
+        keyword: job.keyword || "Unknown",
+        location: job.location || "Unknown",
+        status: job.status || "unknown",
+        progress: job.progress || 0,
+        leads_count: job.leadsScraped || 0,
+        requested_leads: job.numberOfLeads || 0,
+        source: job.source || "node",
+      }));
+      setJobs(normalized);
       if (!silent) setLoading(false);
     } catch {
       if (!silent) setLoading(false);
@@ -42,7 +50,7 @@ export default function JobHistory() {
     setDeletingId(jobId);
     try {
       const token = localStorage.getItem("token");
-      await fetch(`http://localhost:8000/scrape/${jobId}`, {
+      await fetch(`http://localhost:5000/api/jobs/${jobId}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -58,17 +66,12 @@ export default function JobHistory() {
     setCancellingId(jobId);
     try {
       const token = localStorage.getItem("token");
-      await fetch(`http://localhost:8000/scrape/${jobId}/cancel`, {
-        method: "POST",
+      await fetch(`http://localhost:5000/api/jobs/${jobId}/cancel`, {
+        method: "PUT",
         headers: { Authorization: `Bearer ${token}` },
       });
-      // Optimistic update
       setJobs((prev) =>
-        prev.map((j) =>
-          j.job_id === jobId
-            ? { ...j, status: "cancelled", progress: j.progress }
-            : j,
-        ),
+        prev.map((j) => (j.job_id === jobId ? { ...j, status: "failed" } : j)),
       );
     } catch {
       alert("Failed to cancel job");
@@ -80,7 +83,7 @@ export default function JobHistory() {
     setRetryingId(job.job_id);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:8000/scrape/", {
+      const res = await fetch("http://localhost:5000/api/jobs", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -89,11 +92,11 @@ export default function JobHistory() {
         body: JSON.stringify({
           keyword: job.keyword,
           location: job.location,
-          leads: job.requested_leads || 20,
+          numberOfLeads: job.requested_leads || 20,
         }),
       });
       const data = await res.json();
-      navigate(`/job/${data.job_id}`);
+      navigate(`/job/${data.job._id}`);
     } catch {
       alert("Failed to retry job");
     }
@@ -103,6 +106,15 @@ export default function JobHistory() {
   const handleLogout = () => {
     localStorage.removeItem("token");
     navigate("/login");
+  };
+
+  const handleViewJob = (job) => {
+    const id = job.navigateId || job.job_id;
+    if (job.status === "completed") {
+      navigate(`/leads/${id}`);
+    } else {
+      navigate(`/job/${id}`);
+    }
   };
 
   const getStatusBadge = (status) => {
@@ -127,10 +139,8 @@ export default function JobHistory() {
 
   const isRunning = (status) =>
     status === "running" || status === "scraping" || status === "pending";
-
   const isFailed = (status) =>
     status === "failed" || status === "error" || status === "cancelled";
-
   const hasActiveJobs = jobs.some((j) => isRunning(j.status));
 
   const filteredJobs = jobs.filter((job) => {
@@ -348,7 +358,6 @@ export default function JobHistory() {
               )}
             </p>
 
-            {/* Desktop Table */}
             <div className="hidden md:block bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl overflow-hidden shadow-xl border border-white/5">
               <table className="w-full">
                 <thead>
@@ -384,11 +393,9 @@ export default function JobHistory() {
                     >
                       <td className="p-4 text-gray-500 text-sm">{index + 1}</td>
                       <td className="p-4 text-white font-medium">
-                        {job.keyword || "Unknown"}
+                        {job.keyword}
                       </td>
-                      <td className="p-4 text-gray-300">
-                        {job.location || "Unknown"}
-                      </td>
+                      <td className="p-4 text-gray-300">{job.location}</td>
                       <td className="p-4">
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusBadge(job.status)}`}
@@ -424,23 +431,15 @@ export default function JobHistory() {
                             {job.progress || 0}%
                           </span>
                         </div>
-                        {isRunning(job.status) && (
-                          <p className="text-blue-400 text-xs mt-1 animate-pulse">
-                            Scraping {job.leads_count}/{job.requested_leads}...
-                          </p>
-                        )}
                       </td>
                       <td className="p-4">
                         <div className="flex gap-2 flex-wrap">
-                          {/* View button */}
                           <button
-                            onClick={() => navigate(`/job/${job.job_id}`)}
+                            onClick={() => handleViewJob(job)}
                             className="bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 px-3 py-1 rounded-lg text-sm transition border border-blue-500/30"
                           >
-                            View →
+                            {job.status === "completed" ? "Leads →" : "View →"}
                           </button>
-
-                          {/* Cancel button for running jobs */}
                           {isRunning(job.status) && (
                             <button
                               onClick={() => handleCancel(job.job_id)}
@@ -450,8 +449,6 @@ export default function JobHistory() {
                               {cancellingId === job.job_id ? "..." : "⛔ Stop"}
                             </button>
                           )}
-
-                          {/* Retry button for failed/cancelled jobs */}
                           {isFailed(job.status) && (
                             <button
                               onClick={() => handleRetry(job)}
@@ -461,8 +458,6 @@ export default function JobHistory() {
                               {retryingId === job.job_id ? "..." : "🔁 Retry"}
                             </button>
                           )}
-
-                          {/* Delete button */}
                           {confirmDelete === job.job_id ? (
                             <div className="flex gap-1">
                               <button
@@ -495,25 +490,18 @@ export default function JobHistory() {
               </table>
             </div>
 
-            {/* Mobile Cards */}
             <div className="md:hidden space-y-4">
               {filteredJobs.map((job) => (
                 <div
                   key={job.job_id}
-                  className={`bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl p-4 shadow-lg border ${
-                    isRunning(job.status)
-                      ? "border-blue-500/30"
-                      : "border-white/5"
-                  }`}
+                  className={`bg-[#1a1f3a]/70 backdrop-blur-md rounded-2xl p-4 shadow-lg border ${isRunning(job.status) ? "border-blue-500/30" : "border-white/5"}`}
                 >
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <p className="text-white font-bold text-lg">
-                        {job.keyword || "Unknown"}
+                        {job.keyword}
                       </p>
-                      <p className="text-gray-400 text-sm">
-                        📍 {job.location || "Unknown"}
-                      </p>
+                      <p className="text-gray-400 text-sm">📍 {job.location}</p>
                     </div>
                     <span
                       className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(job.status)}`}
@@ -521,7 +509,6 @@ export default function JobHistory() {
                       {getStatusText(job.status)}
                     </span>
                   </div>
-
                   <div className="flex justify-between items-center mb-3">
                     <div>
                       <p className="text-gray-400 text-xs">Leads Found</p>
@@ -531,11 +518,6 @@ export default function JobHistory() {
                           / {job.requested_leads}
                         </span>
                       </p>
-                      {isRunning(job.status) && (
-                        <p className="text-blue-400 text-xs animate-pulse">
-                          Scraping in progress...
-                        </p>
-                      )}
                     </div>
                     <div className="text-right">
                       <p className="text-gray-400 text-xs mb-1">Progress</p>
@@ -558,15 +540,15 @@ export default function JobHistory() {
                       </div>
                     </div>
                   </div>
-
                   <div className="flex gap-2 flex-wrap">
                     <button
-                      onClick={() => navigate(`/job/${job.job_id}`)}
+                      onClick={() => handleViewJob(job)}
                       className="flex-1 bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 py-2 rounded-xl text-sm transition border border-blue-500/30"
                     >
-                      View Leads →
+                      {job.status === "completed"
+                        ? "View Leads →"
+                        : "View Progress →"}
                     </button>
-
                     {isRunning(job.status) && (
                       <button
                         onClick={() => handleCancel(job.job_id)}
@@ -576,7 +558,6 @@ export default function JobHistory() {
                         {cancellingId === job.job_id ? "..." : "⛔ Stop"}
                       </button>
                     )}
-
                     {isFailed(job.status) && (
                       <button
                         onClick={() => handleRetry(job)}
@@ -586,7 +567,6 @@ export default function JobHistory() {
                         {retryingId === job.job_id ? "..." : "🔁 Retry"}
                       </button>
                     )}
-
                     {confirmDelete === job.job_id ? (
                       <div className="flex gap-1">
                         <button

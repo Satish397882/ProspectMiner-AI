@@ -23,16 +23,20 @@ export default function CreateJob() {
     setLoading(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:8000/scrape/", {
+      const res = await fetch("http://localhost:5000/api/jobs", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          keyword: form.keyword,
+          location: form.location,
+          numberOfLeads: form.leads,
+        }),
       });
       const data = await res.json();
-      navigate(`/job/${data.job_id}`);
+      navigate(`/job/${data.job._id}`);
     } catch {
       setLoading(false);
       alert("Failed to start job. Is backend running?");

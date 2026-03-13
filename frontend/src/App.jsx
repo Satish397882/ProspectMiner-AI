@@ -7,6 +7,7 @@ import CreateJob from "./pages/CreateJob";
 import JobProgress from "./pages/JobProgress";
 import History from "./pages/JobHistory";
 import Analytics from "./pages/Analytics";
+import Leads from "./pages/Leads";
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -44,6 +45,7 @@ function App() {
             <Route path="/job/:jobId" element={<JobProgress />} />
             <Route path="/history" element={<History />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/leads/:jobId" element={<Leads />} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
           </>
         ) : (

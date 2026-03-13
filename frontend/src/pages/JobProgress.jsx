@@ -5,9 +5,8 @@ import AnimatedBackground from "../components/AnimatedBackground";
 export default function JobProgress() {
   const { jobId } = useParams();
   const navigate = useNavigate();
-  const [leads, setLeads] = useState([]);
   const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState("connecting");
+  const [status, setStatus] = useState("pending");
   const [leadsCount, setLeadsCount] = useState(0);
   const [requestedLeads, setRequestedLeads] = useState(0);
   const [keyword, setKeyword] = useState("");
@@ -18,99 +17,50 @@ export default function JobProgress() {
   const getToken = () => localStorage.getItem("token");
 
   useEffect(() => {
-    let eventSource = null;
-    let fallbackTimer = setTimeout(() => fetchLeads(), 2000);
+    fetchJobStatus();
 
-    // Start polling for live lead count while scraping
     pollRef.current = setInterval(() => {
-      if (status !== "completed" && status !== "error") {
-        fetchJobStatus();
-      }
+      fetchJobStatus();
     }, 2000);
 
-    try {
-      const token = getToken();
-      const url = `http://localhost:8000/scrape/${jobId}/stream?token=${token}`;
-      eventSource = new EventSource(url);
-      eventSource.onopen = () => clearTimeout(fallbackTimer);
-      eventSource.onmessage = (e) => {
-        clearTimeout(fallbackTimer);
-        const data = JSON.parse(e.data);
-        setProgress(data.progress || 0);
-        setStatus(data.status || "running");
-        if (data.leads_count !== undefined) setLeadsCount(data.leads_count);
-        if (data.status === "completed") {
-          eventSource.close();
-          clearInterval(pollRef.current);
-          fetchLeads();
-        }
-      };
-      eventSource.onerror = () => {
-        clearTimeout(fallbackTimer);
-        eventSource.close();
-        fetchLeads();
-      };
-    } catch {
-      fetchLeads();
-    }
-
-    return () => {
-      clearTimeout(fallbackTimer);
-      clearInterval(pollRef.current);
-      if (eventSource) eventSource.close();
-    };
+    return () => clearInterval(pollRef.current);
   }, [jobId]);
 
   const fetchJobStatus = async () => {
     try {
-      const res = await fetch(`http://localhost:8000/scrape/${jobId}`, {
+      const res = await fetch(`http://localhost:5000/api/jobs/${jobId}`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       });
       if (!res.ok) return;
       const data = await res.json();
-      setProgress(data.progress || 0);
-      setStatus(data.status || "running");
-      setLeadsCount(data.leads ? data.leads.length : 0);
-      if (data.keyword) setKeyword(data.keyword);
-      if (data.location) setLocation(data.location);
-      if (data.requested_leads) setRequestedLeads(data.requested_leads);
-      if (data.status === "completed") {
+      const job = data.job;
+
+      setProgress(job.progress || 0);
+      setStatus(job.status || "pending");
+      setLeadsCount(job.leadsScraped || 0);
+      setRequestedLeads(job.numberOfLeads || 0);
+      if (job.keyword) setKeyword(job.keyword);
+      if (job.location) setLocation(job.location);
+
+      if (job.status === "completed") {
         clearInterval(pollRef.current);
-        setLeads(data.leads || []);
+        // Redirect to leads page after completion
+        setTimeout(() => navigate(`/leads/${jobId}`), 1500);
+      }
+
+      if (job.status === "failed") {
+        clearInterval(pollRef.current);
       }
     } catch {
       // silent fail
     }
   };
 
-  const fetchLeads = async () => {
-    try {
-      const res = await fetch(`http://localhost:8000/scrape/${jobId}`, {
-        headers: { Authorization: `Bearer ${getToken()}` },
-      });
-      if (!res.ok) {
-        setStatus("error");
-        return;
-      }
-      const data = await res.json();
-      setLeads(data.leads || []);
-      setLeadsCount(data.leads ? data.leads.length : 0);
-      setStatus("completed");
-      setProgress(100);
-      if (data.keyword) setKeyword(data.keyword);
-      if (data.location) setLocation(data.location);
-      if (data.requested_leads) setRequestedLeads(data.requested_leads);
-    } catch {
-      setStatus("error");
-    }
-  };
-
   const handleCancel = async () => {
     try {
-      const token = getToken();
-      await fetch(`http://localhost:8000/scrape/${jobId}/cancel`, {
+      await fetch(`http://localhost:5000/api/jobs/${jobId}/cancel`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${getToken()}` },
       });
       clearInterval(pollRef.current);
       setStatus("cancelled");
@@ -119,34 +69,11 @@ export default function JobProgress() {
     }
   };
 
-  const exportCSV = () => {
-    if (leads.length === 0) return;
-    const headers = ["Name", "Phone", "Website", "Rating", "Address"];
-    const rows = leads.map((lead) => [
-      `"${(lead.name || "").replace(/"/g, '""')}"`,
-      `"${(lead.phone || "").replace(/"/g, '""')}"`,
-      `"${(lead.website || "").replace(/"/g, '""')}"`,
-      `"${(lead.rating || "").toString().replace(/"/g, '""')}"`,
-      `"${(lead.address || "").replace(/"/g, '""')}"`,
-    ]);
-    const csvContent = [
-      headers.join(","),
-      ...rows.map((r) => r.join(",")),
-    ].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `leads_${jobId.slice(0, 8)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
   const isRunning =
     status === "running" ||
     status === "scraping" ||
-    status === "connecting" ||
-    status === "waiting";
+    status === "pending" ||
+    status === "connecting";
 
   return (
     <div className="min-h-screen bg-[#0a0d1a] relative overflow-hidden">
@@ -244,18 +171,16 @@ export default function JobProgress() {
         {/* Progress Bar */}
         {isRunning && (
           <div className="max-w-2xl mx-auto mb-8 bg-[#1a1f3a]/70 backdrop-blur-md p-6 rounded-2xl border border-white/5">
-            {/* Status text */}
             <div className="flex justify-between items-center text-sm mb-3">
               <span className="text-gray-400">
-                {status === "connecting" && "🔄 Connecting..."}
-                {status === "waiting" && "⏳ Waiting to start..."}
+                {status === "pending" && "⏳ Waiting to start..."}
                 {(status === "running" || status === "scraping") &&
                   "🚀 Scraping in progress..."}
+                {status === "connecting" && "🔄 Connecting..."}
               </span>
               <span className="font-bold text-blue-400">{progress}%</span>
             </div>
 
-            {/* Progress bar */}
             <div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden mb-3">
               <div
                 className="bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 h-4 rounded-full transition-all duration-500 ease-out"
@@ -263,7 +188,6 @@ export default function JobProgress() {
               />
             </div>
 
-            {/* Live lead count */}
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <span className="relative flex h-2 w-2">
@@ -287,7 +211,20 @@ export default function JobProgress() {
           </div>
         )}
 
-        {/* Cancelled state */}
+        {/* Completed - redirecting */}
+        {status === "completed" && (
+          <div className="max-w-2xl mx-auto mb-8 bg-green-500/10 border border-green-500/30 rounded-2xl p-6 text-center">
+            <div className="text-4xl mb-3">🎉</div>
+            <p className="text-green-400 font-semibold text-lg mb-1">
+              Scraping Complete!
+            </p>
+            <p className="text-gray-400 text-sm">
+              {leadsCount} leads found — redirecting to leads page...
+            </p>
+          </div>
+        )}
+
+        {/* Cancelled */}
         {status === "cancelled" && (
           <div className="max-w-2xl mx-auto mb-8 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-6 text-center">
             <div className="text-4xl mb-3">⛔</div>
@@ -316,163 +253,27 @@ export default function JobProgress() {
           </div>
         )}
 
-        {/* Success banner */}
-        {status === "completed" && leads.length > 0 && (
-          <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-4 mb-6 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">🎉</span>
-              <div>
-                <p className="text-green-400 font-semibold">
-                  Scraping Complete!
-                </p>
-                <p className="text-gray-400 text-sm">
-                  {leads.length} leads found successfully
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={exportCSV}
-              className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-xl transition font-semibold"
-            >
-              📥 Export CSV
-            </button>
-          </div>
-        )}
-
-        {status === "completed" && leads.length === 0 && (
-          <div className="text-gray-400 text-center mt-20 text-xl">
-            ⏳ Loading leads...
-          </div>
-        )}
-
-        {status === "error" && (
-          <div className="text-center mt-20">
-            <p className="text-red-400 text-xl mb-4">
-              ❌ Failed to load job data
+        {/* Failed */}
+        {status === "failed" && (
+          <div className="max-w-2xl mx-auto mb-8 bg-red-500/10 border border-red-500/30 rounded-2xl p-6 text-center">
+            <div className="text-4xl mb-3">❌</div>
+            <p className="text-red-400 font-semibold text-lg mb-1">
+              Job Failed
             </p>
-            <button
-              onClick={fetchLeads}
-              className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-xl transition"
-            >
-              🔄 Retry
-            </button>
-          </div>
-        )}
-
-        {/* Leads Table */}
-        {leads.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-4 flex justify-between items-center">
-              <p className="text-white font-semibold text-lg">
-                📋 {leads.length} Leads Found
-              </p>
+            <div className="flex gap-3 justify-center mt-4">
               <button
-                onClick={exportCSV}
-                className="bg-white/20 hover:bg-white/30 text-white px-4 py-1.5 rounded-lg text-sm transition border border-white/30"
+                onClick={() => navigate("/create-job")}
+                className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-xl transition"
               >
-                📥 Download CSV
+                ➕ New Job
+              </button>
+              <button
+                onClick={() => navigate("/history")}
+                className="bg-[#1a1f3a] text-white px-6 py-2 rounded-xl transition border border-white/10"
+              >
+                📊 History
               </button>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="p-4 text-left text-gray-500 font-medium">
-                      #
-                    </th>
-                    <th className="p-4 text-left text-gray-500 font-medium">
-                      Name
-                    </th>
-                    <th className="p-4 text-left text-gray-500 font-medium">
-                      Phone
-                    </th>
-                    <th className="p-4 text-left text-gray-500 font-medium">
-                      Website
-                    </th>
-                    <th className="p-4 text-left text-gray-500 font-medium">
-                      Rating
-                    </th>
-                    <th className="p-4 text-left text-gray-500 font-medium">
-                      Address
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {leads.map((lead, index) => (
-                    <tr
-                      key={index}
-                      className="border-t hover:bg-gray-50 transition"
-                    >
-                      <td className="p-4 text-gray-400 text-xs">{index + 1}</td>
-                      <td className="p-4 font-medium text-gray-800">
-                        {lead.name || "-"}
-                      </td>
-                      <td className="p-4">
-                        {lead.phone ? (
-                          <a
-                            href={`tel:${lead.phone}`}
-                            className="text-blue-500 hover:underline"
-                          >
-                            {lead.phone}
-                          </a>
-                        ) : (
-                          "-"
-                        )}
-                      </td>
-                      <td className="p-4">
-                        {lead.website ? (
-                          <a
-                            href={lead.website}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-blue-500 hover:underline"
-                          >
-                            Visit →
-                          </a>
-                        ) : (
-                          "-"
-                        )}
-                      </td>
-                      <td className="p-4">
-                        {lead.rating ? (
-                          <span className="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full text-xs font-medium">
-                            ⭐ {lead.rating}
-                          </span>
-                        ) : (
-                          "-"
-                        )}
-                      </td>
-                      <td className="p-4 text-gray-600 text-xs max-w-xs truncate">
-                        {lead.address || "-"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {leads.length > 0 && (
-          <div className="flex gap-4 mt-6">
-            <button
-              onClick={() => navigate("/dashboard")}
-              className="bg-[#1a1f3a]/70 hover:bg-[#252b4a] text-white px-6 py-2 rounded-xl transition border border-white/10"
-            >
-              ← Dashboard
-            </button>
-            <button
-              onClick={() => navigate("/create-job")}
-              className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-xl transition"
-            >
-              ➕ New Job
-            </button>
-            <button
-              onClick={exportCSV}
-              className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-xl transition ml-auto"
-            >
-              📥 Export CSV
-            </button>
           </div>
         )}
       </div>

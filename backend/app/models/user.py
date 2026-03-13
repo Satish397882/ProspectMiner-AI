@@ -8,3 +8,8 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+class User(BaseModel):
+
+    id: str
+    email: str
+    credits: int = 10    

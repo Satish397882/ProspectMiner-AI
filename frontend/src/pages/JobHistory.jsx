@@ -153,7 +153,23 @@ export default function JobHistory() {
         ? isRunning(job.status)
         : job.status === filterStatus);
     return matchSearch && matchStatus;
-  });
+    const exportJobs = async () => {
+
+  const res = await fetch("/api/jobs/export")
+
+  const blob = await res.blob()
+
+  const url = window.URL.createObjectURL(blob)
+
+  const a = document.createElement("a")
+
+  a.href = url
+  a.download = "jobs.csv"
+
+  a.click()
+    }
+
+});
 
   return (
     <div className="min-h-screen bg-[#0a0d1a] relative overflow-hidden">
@@ -279,6 +295,9 @@ export default function JobHistory() {
               onClick={() => navigate("/create-job")}
               className="flex-1 sm:flex-none bg-gradient-to-r from-blue-500 to-purple-600 text-white px-4 py-2 rounded-lg transition text-sm"
             >
+            <button onClick={exportJobs}>
+              Export Jobs
+            </button>  
               ➕ New Job
             </button>
           </div>

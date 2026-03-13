@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException, Request, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from app.workers.job_runner import run_scrape_job_sync, JOB_STATUS, save_jobs, delete_job_from_db, jobs_collection, save_job
+from ..workers.job_runner import run_scrape_job_sync, save_jobs, delete_job_from_db, jobs_collection
+
 import asyncio
 import json
 import uuid
@@ -10,6 +11,19 @@ import jwt
 import os
 from datetime import datetime, timedelta
 from collections import Counter
+from ..utils.credit_manager import check_credits, deduct_credit
+from ..db.database import get_db
+from fastapi import APIRouter
+import uuid
+
+router = APIRouter()
+
+JOB_STATUS = {}
+def save_jobs(job_id, job_data):
+    JOB_STATUS[job_id] = job_data
+
+def get_job(job_id):
+    return JOB_STATUS.get(job_id)
 
 router = APIRouter(prefix="/scrape", tags=["Scraping"])
 
@@ -43,13 +57,7 @@ def get_user_id_from_token(token: str):
 
 
 def get_user_jobs(user_id: str) -> dict:
-    if not user_id:
-        return {}
-    return {
-        job_id: job_data
-        for job_id, job_data in JOB_STATUS.items()
-        if job_data.get("user_id") == user_id
-    }
+    return {}
 
 
 class ScrapeRequest(BaseModel):
@@ -69,7 +77,7 @@ def start_scrape(request: ScrapeRequest, req: Request):
 
     query = f"{request.keyword} in {request.location}"
     job_id = str(uuid.uuid4())
-    JOB_STATUS[job_id] = {
+    save_jobs(job_id, {
         "progress": 0,
         "status": "running",
         "leads": [],
@@ -79,8 +87,8 @@ def start_scrape(request: ScrapeRequest, req: Request):
         "created_at": datetime.utcnow().isoformat(),
         "user_id": user_id,
         "cancelled": False,
-        "queue_type": "threading",
-    }
+        "queue_type": "redis-sse",
+    })
 
     thread = threading.Thread(target=run_scrape_job_sync, args=(query, leads, job_id))
     thread.daemon = True
@@ -255,22 +263,17 @@ def get_job_history(req: Request):
 @router.post("/{job_id}/cancel")
 def cancel_job(job_id: str, req: Request):
     user_id = get_user_id_from_request(req)
-    job = JOB_STATUS.get(job_id)
 
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if job.get("user_id") != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized")
-    if job.get("status") not in ["running", "scraping", "pending", "queued"]:
-        raise HTTPException(status_code=400, detail="Job is not running")
-
-    JOB_STATUS[job_id]["cancelled"] = True
-    JOB_STATUS[job_id]["status"] = "cancelled"
-
-    try:
-        save_job(job_id, JOB_STATUS[job_id])
-    except Exception as e:
-        print(f"[CANCEL SAVE ERROR] {e}")
+    jobs_collection.update_one(
+        {"job_id": job_id, "user_id": user_id},
+        {"$set": {"status": "cancelled", "cancelled": True}}
+    )
+    
+    from ..utils.redis_client import redis_client
+    redis_client.publish(f"job:{job_id}", json.dumps({
+        "status": "cancelled", 
+        "progress": 0
+    }))
 
     return {"message": "Job cancelled successfully", "job_id": job_id}
 
@@ -278,26 +281,13 @@ def cancel_job(job_id: str, req: Request):
 @router.delete("/{job_id}")
 def delete_job(job_id: str, req: Request):
     user_id = get_user_id_from_request(req)
-    job = JOB_STATUS.get(job_id)
 
-    if not job:
-        try:
-            db_job = jobs_collection.find_one({"job_id": job_id})
-            if not db_job:
-                raise HTTPException(status_code=404, detail="Job not found")
-            if db_job.get("user_id") != user_id:
-                raise HTTPException(status_code=403, detail="Not authorized")
-            delete_job_from_db(job_id)
-            return {"message": "Job deleted successfully"}
-        except HTTPException:
-            raise
-        except Exception:
-            raise HTTPException(status_code=404, detail="Job not found")
-
-    if job.get("user_id") != user_id:
+    db_job = jobs_collection.find_one({"job_id": job_id})
+    if not db_job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if db_job.get("user_id") != user_id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    del JOB_STATUS[job_id]
     delete_job_from_db(job_id)
     return {"message": "Job deleted successfully"}
 

@@ -1,6 +1,8 @@
 import time
 from pymongo import MongoClient
-from app.scrapers.google_maps import scrape_google_maps
+from ..scrapers.google_maps import scrape_google_maps
+from ..utils.redis_client import redis_client
+import json
 import os
 from datetime import datetime
 
@@ -9,9 +11,6 @@ MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/prospectminer"
 client = MongoClient(MONGODB_URI)
 db = client.get_database("prospectminer")
 jobs_collection = db["jobs"]
-
-# In-memory cache for SSE progress (fast reads)
-JOB_STATUS = {}
 
 
 def load_jobs():
@@ -69,40 +68,44 @@ def delete_job_from_db(job_id: str):
         print(f"⚠️ MongoDB delete error: {e}")
 
 
+def publish_progress(job_id, stage, progress):
+    redis_client.publish(
+        f"job:{job_id}",
+        json.dumps({
+            "stage": stage,
+            "progress": progress
+        })
+    )
+
 def run_scrape_job_sync(query: str, count: int = 10, job_id: str = None):
     """
-    Threading fallback - Celery na ho to ye use hoga
+    Redis SSE enabled scraping - Real-time progress streaming
     """
     print(f"🔵 Starting scrape: {query}, count: {count}")
 
     if job_id:
-        JOB_STATUS[job_id]["progress"] = 10
-        JOB_STATUS[job_id]["status"] = "scraping"
-        save_job(job_id, JOB_STATUS[job_id])
+        publish_progress(job_id, "scraping", 10)
+        save_job(job_id, {"progress": 10, "status": "scraping"})
         time.sleep(0.5)
 
-        JOB_STATUS[job_id]["progress"] = 20
-        save_job(job_id, JOB_STATUS[job_id])
+        publish_progress(job_id, "scraping", 20)
+        save_job(job_id, {"progress": 20})
 
     leads = scrape_google_maps(
         query,
         max_results=count,
-        job_id=job_id,
-        job_status=JOB_STATUS
+        job_id=job_id
     )
     print(f"✅ Scraped {len(leads)} leads")
 
-    if job_id and job_id in JOB_STATUS:
-        if JOB_STATUS[job_id].get("cancelled"):
+    if job_id:
+        if jobs_collection.find_one({"job_id": job_id, "cancelled": True}):
             print(f"⛔ Job {job_id} was cancelled")
-            JOB_STATUS[job_id]["leads"] = leads
-            save_job(job_id, JOB_STATUS[job_id])
+            save_job(job_id, {"progress": 0, "status": "cancelled", "leads": leads})
             return leads
 
-        JOB_STATUS[job_id]["progress"] = 100
-        JOB_STATUS[job_id]["status"] = "completed"
-        JOB_STATUS[job_id]["leads"] = leads
-        save_job(job_id, JOB_STATUS[job_id])
+        publish_progress(job_id, "completed", 100)
+        save_job(job_id, {"progress": 100, "status": "completed", "leads": leads})
 
     print(f"🎉 Job completed with {len(leads)} results")
     return leads

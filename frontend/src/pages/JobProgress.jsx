@@ -17,13 +17,30 @@ export default function JobProgress() {
   const getToken = () => localStorage.getItem("token");
 
   useEffect(() => {
-    fetchJobStatus();
+    // SSE Connection
+    const eventSource = new EventSource(`http://localhost:8000/scrape/${jobId}/stream?token=${getToken()}`);
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        setProgress(data.progress || 0);
+        setStatus(data.status || 'running');
+        setLeadsCount(data.leads_count || 0);
+      } catch (e) {
+        console.log('SSE parse error:', e);
+      }
+    };
 
-    pollRef.current = setInterval(() => {
-      fetchJobStatus();
-    }, 2000);
+    eventSource.onerror = () => {
+      console.log('SSE connection error, falling back to polling');
+      // Fallback polling
+      pollRef.current = setInterval(fetchJobStatus, 5000);
+    };
 
-    return () => clearInterval(pollRef.current);
+    return () => {
+      eventSource.close();
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, [jobId]);
 
   const fetchJobStatus = async () => {
@@ -59,9 +76,9 @@ export default function JobProgress() {
   const handleCancel = async () => {
     try {
       await fetch(`http://localhost:5000/api/jobs/${jobId}/cancel`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${getToken()}` },
-      });
+  method: "PUT",
+  headers: { Authorization: `Bearer ${getToken()}` },
+});
       clearInterval(pollRef.current);
       setStatus("cancelled");
     } catch {

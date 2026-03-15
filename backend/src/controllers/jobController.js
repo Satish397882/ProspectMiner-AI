@@ -1,15 +1,29 @@
 const Job = require("../models/Job");
 const Lead = require("../models/Lead");
+const User = require("../models/User");
 const mongoose = require("mongoose");
 const { scrapingQueue } = require("../config/queue");
 
 exports.createJob = async (req, res) => {
   try {
     const { keyword, location, numberOfLeads } = req.body;
+    const leadsRequested = numberOfLeads || 50;
+
+    // Credit check
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    if (user.credits < leadsRequested) {
+      return res.status(400).json({
+        error: `Insufficient credits. You have ${user.credits} credits but need ${leadsRequested}.`,
+        credits: user.credits,
+      });
+    }
+
     console.log("📝 Creating job:", {
       keyword,
       location,
-      numberOfLeads,
+      numberOfLeads: leadsRequested,
       userId: req.userId,
     });
 
@@ -17,7 +31,7 @@ exports.createJob = async (req, res) => {
       userId: req.userId,
       keyword,
       location,
-      numberOfLeads: numberOfLeads || 50,
+      numberOfLeads: leadsRequested,
       status: "pending",
     });
 
@@ -29,13 +43,17 @@ exports.createJob = async (req, res) => {
       userId: req.userId,
       keyword,
       location,
-      numberOfLeads: numberOfLeads || 50,
+      numberOfLeads: leadsRequested,
     });
 
     console.log("✅ Job queued:", job._id);
     res
       .status(201)
-      .json({ message: "Job created and queued successfully", job });
+      .json({
+        message: "Job created and queued successfully",
+        job,
+        credits: user.credits,
+      });
   } catch (error) {
     console.error("❌ createJob error:", error);
     res.status(500).json({ error: error.message });
@@ -119,6 +137,10 @@ exports.getDashboardStats = async (req, res) => {
     const successRate =
       totalJobs > 0 ? Math.round((completedJobs / totalJobs) * 100) : 0;
 
+    // Credits
+    const user = await User.findById(userId).select("credits");
+    const credits = user ? user.credits : 0;
+
     res.json({
       total_leads: totalLeads,
       active_jobs: activeJobs,
@@ -126,6 +148,7 @@ exports.getDashboardStats = async (req, res) => {
       failed_jobs: failedJobs,
       total_jobs: totalJobs,
       success_rate: successRate,
+      credits,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -156,7 +179,6 @@ exports.getAnalytics = async (req, res) => {
     const avgLeadsPerJob =
       totalJobs > 0 ? Math.round(totalLeads / totalJobs) : 0;
 
-    // Last 7 days activity
     const last7Days = [];
     for (let i = 6; i >= 0; i--) {
       const date = new Date();
@@ -180,13 +202,11 @@ exports.getAnalytics = async (req, res) => {
       last7Days.push({ day: dayStr, jobs: dayJobs.length, leads: dayLeads });
     }
 
-    // Leads per job
     const leadsPerJob = allJobs.slice(0, 8).map((j) => ({
       name: (j.keyword || "Unknown").slice(0, 10),
       leads: j.leadsScraped || (Array.isArray(j.leads) ? j.leads.length : 0),
     }));
 
-    // Top keywords
     const keywordMap = {};
     allJobs.forEach((j) => {
       const kw = j.keyword || "Unknown";
@@ -200,7 +220,6 @@ exports.getAnalytics = async (req, res) => {
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
-    // Donut data
     const activeJobs = allJobs.filter((j) =>
       ["pending", "running", "scraping"].includes(j.status),
     ).length;
@@ -258,6 +277,16 @@ exports.cancelJob = async (req, res) => {
     job.errorMessage = "Job cancelled by user";
     await job.save();
     res.json({ message: "Job cancelled successfully", job });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getCredits = async (req, res) => {
+  try {
+    const user = await User.findById(req.userId).select("credits name email");
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json({ credits: user.credits, name: user.name, email: user.email });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -1,27 +1,22 @@
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
 
-// Generate JWT Token
 const generateToken = (userId) => {
   return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: "7d" });
 };
 
-// Signup
 exports.signup = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ error: "User already exists" });
     }
 
-    // Create new user
-    const user = new User({ name, email, password });
+    const user = new User({ name, email, password, credits: 500 });
     await user.save();
 
-    // Generate token
     const token = generateToken(user._id);
 
     res.status(201).json({
@@ -31,6 +26,7 @@ exports.signup = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        credits: user.credits,
       },
     });
   } catch (error) {
@@ -38,24 +34,20 @@ exports.signup = async (req, res) => {
   }
 };
 
-// Login
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Find user
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // Check password
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // Generate token
     const token = generateToken(user._id);
 
     res.json({
@@ -65,8 +57,19 @@ exports.login = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        credits: user.credits,
       },
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.userId).select("-password");
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json({ user });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

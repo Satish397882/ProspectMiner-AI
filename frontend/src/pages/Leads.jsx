@@ -274,6 +274,7 @@ export default function Leads() {
   const [pagination, setPagination] = useState(null);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [enrichingLeadIds, setEnrichingLeadIds] = useState(new Set());
   const [enrichmentTriggered, setEnrichmentTriggered] = useState(false);
@@ -441,7 +442,6 @@ export default function Leads() {
       fetchLeads();
       fetchStats();
       fetchJob();
-      // Auto-refresh stats every 5 seconds for enrichment progress
       statsIntervalRef.current = setInterval(() => {
         fetchStats();
       }, 5000);
@@ -515,39 +515,106 @@ export default function Leads() {
     }
   };
 
-  const exportCSV = () => {
-    const exportLeads = isPythonJob ? allLeads : leads;
-    if (!exportLeads.length) return;
-    const headers = [
-      "Business Name",
-      "Phone",
-      "Email",
-      "Website",
-      "Rating",
-      "Category",
-      "Lead Score",
-      "Address",
-    ];
-    const rows = exportLeads.map((l) =>
-      [
-        l.businessName,
-        l.phone || "",
-        l.email || "",
-        l.website || "",
-        l.rating || "",
-        l.category || "",
-        l.leadScore,
-        l.address || "",
-      ].map((v) => `"${String(v).replace(/"/g, '""')}"`),
-    );
-    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `leads_${jobId.slice(0, 8)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const exportCSV = async () => {
+    if (isPythonJob) {
+      // Python job — client side filtered leads
+      const exportLeads = applyClientFilters(allLeads, filters);
+      if (!exportLeads.length) return alert("No leads to export!");
+
+      const headers = [
+        "Business Name",
+        "Phone",
+        "Email",
+        "Website",
+        "Rating",
+        "Category",
+        "Lead Score",
+        "Address",
+      ];
+      const rows = exportLeads.map((l) =>
+        [
+          l.businessName,
+          l.phone || "",
+          l.email || "",
+          l.website || "",
+          l.rating || "",
+          l.category || "",
+          l.leadScore,
+          l.address || "",
+        ].map((v) => `"${String(v).replace(/"/g, '""')}"`),
+      );
+      const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join(
+        "\n",
+      );
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `leads_${jobId.slice(0, 8)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      // Node.js job — fetch ALL filtered leads from backend
+      try {
+        setExporting(true);
+        const params = new URLSearchParams({
+          page: 1,
+          limit: 10000,
+          sortBy: filters.sortBy,
+          sortOrder: filters.sortOrder,
+          ...(filters.search && { search: filters.search }),
+          ...(filters.category && { category: filters.category }),
+          ...(filters.leadScore && { leadScore: filters.leadScore }),
+          ...(filters.rating && { rating: filters.rating }),
+        });
+
+        const res = await fetch(`${API}/leads/${jobId}?${params}`, {
+          headers: authHeaders(),
+        });
+        if (!res.ok) return alert("Failed to fetch leads for export");
+        const data = await res.json();
+        const exportLeads = data.leads || [];
+
+        if (!exportLeads.length) return alert("No leads to export!");
+
+        const headers = [
+          "Business Name",
+          "Phone",
+          "Email",
+          "Website",
+          "Rating",
+          "Category",
+          "Lead Score",
+          "Address",
+        ];
+        const rows = exportLeads.map((l) =>
+          [
+            l.businessName,
+            l.phone || "",
+            l.email || "",
+            l.website || "",
+            l.rating || "",
+            l.category || "",
+            l.leadScore,
+            l.address || "",
+          ].map((v) => `"${String(v).replace(/"/g, '""')}"`),
+        );
+        const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join(
+          "\n",
+        );
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `leads_${jobId.slice(0, 8)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch {
+        alert("❌ Export failed");
+      } finally {
+        setExporting(false);
+      }
+    }
   };
 
   return (
@@ -588,9 +655,10 @@ export default function Leads() {
               )}
             <button
               onClick={exportCSV}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm bg-green-500/20 border border-green-500/30 text-green-400 hover:bg-green-500/30 transition-colors"
+              disabled={exporting}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm bg-green-500/20 border border-green-500/30 text-green-400 hover:bg-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              📥 Export CSV
+              {exporting ? "⏳ Exporting..." : "📥 Export CSV"}
             </button>
           </div>
         </div>

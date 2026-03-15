@@ -4,6 +4,7 @@ const { cacheJobProgress, deleteJobProgressCache } = require("../config/redis");
 const { enrichmentQueue } = require("../config/queue");
 const Job = require("../models/Job");
 const Lead = require("../models/Lead");
+const User = require("../models/User");
 const axios = require("axios");
 const { broadcastJobProgress } = require("../controllers/sseController");
 
@@ -31,7 +32,7 @@ const scrapingWorker = new Worker(
           status: "running",
           progress: 0,
           leadsScraped: 0,
-          numberOfLeads: numberOfLeads,
+          numberOfLeads,
         },
       });
 
@@ -41,7 +42,7 @@ const scrapingWorker = new Worker(
 
       const response = await axios.post(
         PYTHON_API_URL + "/scrape/",
-        { keyword: keyword, location: location, count: numberOfLeads },
+        { keyword, location, count: numberOfLeads },
         { timeout: 30000 },
       );
 
@@ -50,41 +51,62 @@ const scrapingWorker = new Worker(
 
       var scrapedLeads = [];
       var attempts = 0;
-      var maxAttempts = 120;
+      var maxAttempts = 300;
 
       while (attempts < maxAttempts) {
-        await new Promise(function (r) {
-          setTimeout(r, 3000);
-        });
+        await new Promise((r) => setTimeout(r, 3000));
 
-        const statusRes = await axios.get(
-          PYTHON_API_URL + "/scrape/" + pythonJobId,
-          {
-            timeout: 10000,
-            headers: { Authorization: "Bearer internal" },
-          },
-        );
-        const statusData = statusRes.data;
+        // Retry logic — ECONNRESET handle karo
+        let statusData;
+        let retries = 3;
+        while (retries > 0) {
+          try {
+            const statusRes = await axios.get(
+              PYTHON_API_URL + "/scrape/" + pythonJobId,
+              { timeout: 15000, headers: { Authorization: "Bearer internal" } },
+            );
+            statusData = statusRes.data;
+            break;
+          } catch (err) {
+            retries--;
+            console.log(
+              `⚠️ Poll error (${err.message}), retries left: ${retries}`,
+            );
+            if (retries === 0) {
+              statusData = { status: "scraping", leads: [] };
+            } else {
+              await new Promise((r) => setTimeout(r, 2000));
+            }
+          }
+        }
+
+        const leadsScraped = statusData.leads ? statusData.leads.length : 0;
+        const progress =
+          statusData.status === "completed"
+            ? 100
+            : numberOfLeads > 0
+              ? Math.min(
+                  99,
+                  Math.round(20 + (leadsScraped / numberOfLeads) * 79),
+                )
+              : 20;
 
         console.log(
           "📊 Python job status: " +
             statusData.status +
             " | leads: " +
-            (statusData.leads ? statusData.leads.length : 0),
+            leadsScraped +
+            " | progress: " +
+            progress +
+            "%",
         );
 
-        const progress = statusData.progress || 0;
-        const leadsScraped = statusData.leads ? statusData.leads.length : 0;
-
-        await Job.findByIdAndUpdate(jobId, {
-          progress: progress,
-          leadsScraped: leadsScraped,
-        });
+        await Job.findByIdAndUpdate(jobId, { progress, leadsScraped });
         await cacheJobProgress(jobId, {
           status: "running",
-          progress: progress,
-          leadsScraped: leadsScraped,
-          numberOfLeads: numberOfLeads,
+          progress,
+          leadsScraped,
+          numberOfLeads,
         });
 
         broadcastJobProgress(userId, {
@@ -92,9 +114,9 @@ const scrapingWorker = new Worker(
           job: {
             id: jobId,
             status: "running",
-            progress: progress,
-            leadsScraped: leadsScraped,
-            numberOfLeads: numberOfLeads,
+            progress,
+            leadsScraped,
+            numberOfLeads,
           },
         });
 
@@ -108,6 +130,19 @@ const scrapingWorker = new Worker(
         }
 
         attempts++;
+      }
+
+      if (attempts >= maxAttempts) {
+        console.log("⚠️ Max attempts reached, fetching final leads...");
+        try {
+          const finalRes = await axios.get(
+            PYTHON_API_URL + "/scrape/" + pythonJobId,
+            { timeout: 15000, headers: { Authorization: "Bearer internal" } },
+          );
+          scrapedLeads = finalRes.data.leads || [];
+        } catch (e) {
+          console.error("❌ Final fetch failed:", e.message);
+        }
       }
 
       console.log("✅ Scraped " + scrapedLeads.length + " leads from Python");
@@ -128,7 +163,7 @@ const scrapingWorker = new Worker(
             leadsScraped: 0,
           },
         });
-        return { success: true, jobId: jobId, leadsCount: 0 };
+        return { success: true, jobId, leadsCount: 0 };
       }
 
       var enrichmentJobs = [];
@@ -136,17 +171,16 @@ const scrapingWorker = new Worker(
       for (var i = 0; i < scrapedLeads.length; i++) {
         const leadData = scrapedLeads[i];
 
-        // Duplicate prevention — same job + name + phone = same lead
         const lead = await Lead.findOneAndUpdate(
           {
-            jobId: jobId,
+            jobId,
             businessName: leadData.name || "Unknown",
             phone: leadData.phone || null,
           },
           {
             $setOnInsert: {
-              jobId: jobId,
-              userId: userId,
+              jobId,
+              userId,
               businessName: leadData.name || "Unknown",
               phone: leadData.phone || null,
               website: leadData.website || null,
@@ -163,21 +197,17 @@ const scrapingWorker = new Worker(
 
         enrichmentJobs.push({
           name: "enrich-lead",
-          data: { leadId: lead._id.toString(), jobId: jobId, userId: userId },
+          data: { leadId: lead._id.toString(), jobId, userId },
           opts: { delay: i * 2000 },
         });
 
         const progress = Math.round(((i + 1) / scrapedLeads.length) * 100);
-
-        await Job.findByIdAndUpdate(jobId, {
-          progress: progress,
-          leadsScraped: i + 1,
-        });
+        await Job.findByIdAndUpdate(jobId, { progress, leadsScraped: i + 1 });
         await cacheJobProgress(jobId, {
           status: "running",
-          progress: progress,
+          progress,
           leadsScraped: i + 1,
-          numberOfLeads: numberOfLeads,
+          numberOfLeads,
         });
         await job.updateProgress(progress);
 
@@ -186,15 +216,23 @@ const scrapingWorker = new Worker(
           job: {
             id: jobId,
             status: "running",
-            progress: progress,
+            progress,
             leadsScraped: i + 1,
-            numberOfLeads: numberOfLeads,
+            numberOfLeads,
           },
         });
       }
 
       await enrichmentQueue.addBulk(enrichmentJobs);
       console.log("📬 Queued " + enrichmentJobs.length + " enrichment jobs");
+
+      // Credits deduct
+      await User.findByIdAndUpdate(userId, {
+        $inc: { credits: -scrapedLeads.length },
+      });
+      console.log(
+        "💳 Deducted " + scrapedLeads.length + " credits from user " + userId,
+      );
 
       await Job.findByIdAndUpdate(jobId, {
         status: "completed",
@@ -223,7 +261,7 @@ const scrapingWorker = new Worker(
           enrichmentJobs.length +
           " enrichments queued",
       );
-      return { success: true, jobId: jobId, leadsCount: scrapedLeads.length };
+      return { success: true, jobId, leadsCount: scrapedLeads.length };
     } catch (error) {
       console.error("❌ Job failed: " + jobId, error.message);
 
@@ -244,19 +282,17 @@ const scrapingWorker = new Worker(
   { connection: redisClient, concurrency: 5 },
 );
 
-scrapingWorker.on("completed", function (job) {
-  console.log("✅ Worker completed job: " + job.id);
-});
-
-scrapingWorker.on("failed", function (job, err) {
+scrapingWorker.on("completed", (job) =>
+  console.log("✅ Worker completed job: " + job.id),
+);
+scrapingWorker.on("failed", (job, err) =>
   console.error(
     "❌ Worker failed job: " + (job ? job.id : "unknown"),
     err.message,
-  );
-});
-
-scrapingWorker.on("error", function (err) {
-  console.error("❌ Worker error:", err.message);
-});
+  ),
+);
+scrapingWorker.on("error", (err) =>
+  console.error("❌ Worker error:", err.message),
+);
 
 module.exports = scrapingWorker;

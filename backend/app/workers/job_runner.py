@@ -6,15 +6,15 @@ import json
 import os
 from datetime import datetime
 
-# MongoDB connection
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/prospectminer")
 client = MongoClient(MONGODB_URI)
 db = client.get_database("prospectminer")
 jobs_collection = db["jobs"]
 
+JOB_STATUS = {}
+
 
 def load_jobs():
-    """Load all jobs from MongoDB into memory on startup"""
     try:
         for job in jobs_collection.find({}):
             job_id = job.get("job_id") or str(job.get("_id"))
@@ -37,7 +37,6 @@ def load_jobs():
 
 
 def save_job(job_id: str, job_data: dict):
-    """Upsert a single job in MongoDB"""
     try:
         jobs_collection.update_one(
             {"job_id": job_id},
@@ -49,7 +48,6 @@ def save_job(job_id: str, job_data: dict):
 
 
 def save_jobs(jobs: dict):
-    """Used for bulk operations"""
     try:
         jobs_collection.delete_many({})
         if jobs:
@@ -60,7 +58,6 @@ def save_jobs(jobs: dict):
 
 
 def delete_job_from_db(job_id: str):
-    """Delete a single job from MongoDB"""
     try:
         jobs_collection.delete_one({"job_id": job_id})
         print(f"🗑️ Deleted job {job_id} from MongoDB")
@@ -77,13 +74,17 @@ def publish_progress(job_id, stage, progress):
         })
     )
 
+
 def run_scrape_job_sync(query: str, count: int = 10, job_id: str = None):
-    """
-    Redis SSE enabled scraping - Real-time progress streaming
-    """
     print(f"🔵 Starting scrape: {query}, count: {count}")
 
     if job_id:
+        JOB_STATUS[job_id] = {
+            "progress": 10,
+            "status": "scraping",
+            "leads": [],
+            "cancelled": False,
+        }
         publish_progress(job_id, "scraping", 10)
         save_job(job_id, {"progress": 10, "status": "scraping"})
         time.sleep(0.5)
@@ -94,15 +95,23 @@ def run_scrape_job_sync(query: str, count: int = 10, job_id: str = None):
     leads = scrape_google_maps(
         query,
         max_results=count,
-        job_id=job_id
+        job_id=job_id,
+        job_status=JOB_STATUS
     )
     print(f"✅ Scraped {len(leads)} leads")
 
     if job_id:
         if jobs_collection.find_one({"job_id": job_id, "cancelled": True}):
             print(f"⛔ Job {job_id} was cancelled")
+            JOB_STATUS[job_id]["status"] = "cancelled"
+            JOB_STATUS[job_id]["progress"] = 0
             save_job(job_id, {"progress": 0, "status": "cancelled", "leads": leads})
             return leads
+
+        # ✅ In-memory + MongoDB + Redis sab update
+        JOB_STATUS[job_id]["status"] = "completed"
+        JOB_STATUS[job_id]["progress"] = 100
+        JOB_STATUS[job_id]["leads"] = leads
 
         publish_progress(job_id, "completed", 100)
         save_job(job_id, {"progress": 100, "status": "completed", "leads": leads})
@@ -111,5 +120,4 @@ def run_scrape_job_sync(query: str, count: int = 10, job_id: str = None):
     return leads
 
 
-# Load jobs from MongoDB on startup
 load_jobs()

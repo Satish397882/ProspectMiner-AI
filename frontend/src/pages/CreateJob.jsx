@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import AnimatedBackground from "../components/AnimatedBackground";
 
@@ -8,12 +8,31 @@ export default function CreateJob() {
   const [loading, setLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [errors, setErrors] = useState({});
+  const [credits, setCredits] = useState(null);
+
+  useEffect(() => {
+    fetchCredits();
+  }, []);
+
+  const fetchCredits = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("http://localhost:5000/api/jobs/credits", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setCredits(data.credits);
+    } catch {}
+  };
 
   const validate = () => {
     const e = {};
     if (!form.keyword.trim()) e.keyword = "Keyword is required";
     if (!form.location.trim()) e.location = "Location is required";
     if (form.leads < 1 || form.leads > 200) e.leads = "Enter between 1 and 200";
+    if (credits !== null && form.leads > credits) {
+      e.leads = `Insufficient credits! You have ${credits} but need ${form.leads}.`;
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -36,6 +55,11 @@ export default function CreateJob() {
         }),
       });
       const data = await res.json();
+      if (!res.ok) {
+        setErrors({ leads: data.error || "Failed to create job" });
+        setLoading(false);
+        return;
+      }
       navigate(`/job/${data.job._id}`);
     } catch {
       setLoading(false);
@@ -54,6 +78,8 @@ export default function CreateJob() {
     { keyword: "Gyms", location: "Bangalore" },
     { keyword: "Hotels", location: "Jaipur" },
   ];
+
+  const insufficientCredits = credits !== null && form.leads > credits;
 
   return (
     <div className="min-h-screen bg-[#0a0d1a] relative overflow-hidden">
@@ -91,6 +117,19 @@ export default function CreateJob() {
           >
             Analytics
           </button>
+          {credits !== null && (
+            <div
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border ${
+                credits < 50
+                  ? "bg-red-500/20 border-red-500/30 text-red-400"
+                  : credits < 150
+                    ? "bg-yellow-500/20 border-yellow-500/30 text-yellow-400"
+                    : "bg-green-500/20 border-green-500/30 text-green-400"
+              }`}
+            >
+              💳 {credits} credits
+            </div>
+          )}
           <button
             onClick={handleLogout}
             className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition"
@@ -144,6 +183,11 @@ export default function CreateJob() {
           >
             Analytics
           </button>
+          {credits !== null && (
+            <div className="text-green-400 text-sm py-2 border-b border-gray-700">
+              💳 {credits} credits
+            </div>
+          )}
           <button
             onClick={handleLogout}
             className="bg-red-500 text-white py-2 rounded-lg mt-2"
@@ -162,6 +206,40 @@ export default function CreateJob() {
             Scrape leads from Google Maps in seconds
           </p>
         </div>
+
+        {/* Credits info bar */}
+        {credits !== null && (
+          <div
+            className={`mb-6 rounded-2xl p-4 border flex items-center justify-between ${
+              insufficientCredits
+                ? "bg-red-500/10 border-red-500/30"
+                : "bg-[#1a1f3a]/70 border-white/5"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">💳</span>
+              <div>
+                <p
+                  className={`font-semibold text-sm ${insufficientCredits ? "text-red-400" : "text-white"}`}
+                >
+                  {insufficientCredits
+                    ? "Insufficient Credits!"
+                    : `${credits} credits available`}
+                </p>
+                <p className="text-gray-500 text-xs">
+                  {insufficientCredits
+                    ? `Need ${form.leads} credits but you have ${credits}`
+                    : `This job will use ${form.leads} credits`}
+                </p>
+              </div>
+            </div>
+            <div
+              className={`text-sm font-bold ${insufficientCredits ? "text-red-400" : "text-green-400"}`}
+            >
+              {insufficientCredits ? "❌" : `${credits - form.leads} remaining`}
+            </div>
+          </div>
+        )}
 
         <div className="mb-6">
           <p className="text-gray-400 text-sm mb-3">⚡ Quick fill:</p>
@@ -223,6 +301,13 @@ export default function CreateJob() {
             <label className="block text-gray-300 text-sm font-medium mb-2">
               📊 Number of Leads:{" "}
               <span className="text-blue-400 font-bold">{form.leads}</span>
+              {credits !== null && (
+                <span
+                  className={`ml-2 text-xs ${insufficientCredits ? "text-red-400" : "text-gray-500"}`}
+                >
+                  ({credits} credits available)
+                </span>
+              )}
             </label>
             <input
               type="range"
@@ -247,7 +332,7 @@ export default function CreateJob() {
             )}
           </div>
 
-          {form.keyword && form.location && (
+          {form.keyword && form.location && !insufficientCredits && (
             <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
               <p className="text-blue-300 text-sm">
                 🚀 Will scrape{" "}
@@ -259,11 +344,20 @@ export default function CreateJob() {
             </div>
           )}
 
+          {insufficientCredits && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
+              <p className="text-red-300 text-sm">
+                ❌ Not enough credits! Reduce leads to{" "}
+                <span className="font-bold text-white">{credits}</span> or less.
+              </p>
+            </div>
+          )}
+
           <button
             onClick={handleSubmit}
-            disabled={loading}
+            disabled={loading || insufficientCredits}
             className={`w-full py-4 rounded-xl font-bold text-lg transition transform active:scale-95 ${
-              loading
+              loading || insufficientCredits
                 ? "bg-gray-600 cursor-not-allowed text-gray-400"
                 : "bg-gradient-to-r from-blue-500 to-purple-600 hover:opacity-90 text-white shadow-lg hover:shadow-blue-500/25"
             }`}
@@ -273,6 +367,8 @@ export default function CreateJob() {
                 <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 Starting Job...
               </span>
+            ) : insufficientCredits ? (
+              "❌ Insufficient Credits"
             ) : (
               "🚀 Start Scraping"
             )}

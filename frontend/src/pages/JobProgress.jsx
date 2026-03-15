@@ -12,36 +12,22 @@ export default function JobProgress() {
   const [keyword, setKeyword] = useState("");
   const [location, setLocation] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [credits, setCredits] = useState(null);
+  const [creditsUsed, setCreditsUsed] = useState(0);
   const pollRef = useRef(null);
+  const eventSourceRef = useRef(null);
 
   const getToken = () => localStorage.getItem("token");
 
-  useEffect(() => {
-    // SSE Connection
-    const eventSource = new EventSource(`http://localhost:8000/scrape/${jobId}/stream?token=${getToken()}`);
-    
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        setProgress(data.progress || 0);
-        setStatus(data.status || 'running');
-        setLeadsCount(data.leads_count || 0);
-      } catch (e) {
-        console.log('SSE parse error:', e);
-      }
-    };
-
-    eventSource.onerror = () => {
-      console.log('SSE connection error, falling back to polling');
-      // Fallback polling
-      pollRef.current = setInterval(fetchJobStatus, 5000);
-    };
-
-    return () => {
-      eventSource.close();
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [jobId]);
+  const fetchCredits = async () => {
+    try {
+      const res = await fetch("http://localhost:5000/api/jobs/credits", {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      const data = await res.json();
+      setCredits(data.credits);
+    } catch {}
+  };
 
   const fetchJobStatus = async () => {
     try {
@@ -61,24 +47,68 @@ export default function JobProgress() {
 
       if (job.status === "completed") {
         clearInterval(pollRef.current);
-        // Redirect to leads page after completion
-        setTimeout(() => navigate(`/leads/${jobId}`), 1500);
+        setCreditsUsed(job.leadsScraped || 0);
+        fetchCredits();
+        setTimeout(() => navigate(`/leads/${jobId}`), 2500);
       }
-
       if (job.status === "failed") {
         clearInterval(pollRef.current);
       }
-    } catch {
-      // silent fail
-    }
+    } catch {}
   };
+
+  useEffect(() => {
+    fetchJobStatus();
+    fetchCredits();
+
+    const token = getToken();
+    const es = new EventSource(
+      `http://localhost:5000/api/jobs/${jobId}/sse?token=${token}`,
+    );
+    eventSourceRef.current = es;
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.progress !== undefined) setProgress(data.progress);
+        if (data.status) setStatus(data.status);
+        if (data.leadsScraped !== undefined) setLeadsCount(data.leadsScraped);
+        if (data.numberOfLeads) setRequestedLeads(data.numberOfLeads);
+
+        if (data.status === "completed") {
+          es.close();
+          clearInterval(pollRef.current);
+          setCreditsUsed(data.leadsScraped || 0);
+          fetchCredits();
+          setTimeout(() => navigate(`/leads/${jobId}`), 2500);
+        }
+        if (data.status === "failed") {
+          es.close();
+          clearInterval(pollRef.current);
+        }
+      } catch (e) {
+        console.log("SSE parse error:", e);
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+      pollRef.current = setInterval(fetchJobStatus, 3000);
+    };
+
+    return () => {
+      es.close();
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [jobId]);
 
   const handleCancel = async () => {
     try {
       await fetch(`http://localhost:5000/api/jobs/${jobId}/cancel`, {
-  method: "PUT",
-  headers: { Authorization: `Bearer ${getToken()}` },
-});
+        method: "PUT",
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (eventSourceRef.current) eventSourceRef.current.close();
       clearInterval(pollRef.current);
       setStatus("cancelled");
     } catch {
@@ -122,6 +152,19 @@ export default function JobProgress() {
           >
             History
           </button>
+          {credits !== null && (
+            <div
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border ${
+                credits < 50
+                  ? "bg-red-500/20 border-red-500/30 text-red-400"
+                  : credits < 150
+                    ? "bg-yellow-500/20 border-yellow-500/30 text-yellow-400"
+                    : "bg-green-500/20 border-green-500/30 text-green-400"
+              }`}
+            >
+              💳 {credits} credits
+            </div>
+          )}
         </div>
         <button
           className="md:hidden text-white text-2xl"
@@ -160,6 +203,11 @@ export default function JobProgress() {
           >
             History
           </button>
+          {credits !== null && (
+            <div className="text-green-400 text-sm py-2 border-b border-gray-700">
+              💳 {credits} credits
+            </div>
+          )}
         </div>
       )}
 
@@ -185,7 +233,6 @@ export default function JobProgress() {
           )}
         </div>
 
-        {/* Progress Bar */}
         {isRunning && (
           <div className="max-w-2xl mx-auto mb-8 bg-[#1a1f3a]/70 backdrop-blur-md p-6 rounded-2xl border border-white/5">
             <div className="flex justify-between items-center text-sm mb-3">
@@ -225,23 +272,54 @@ export default function JobProgress() {
                 Live updating...
               </span>
             </div>
+
+            {/* Credits usage during scraping */}
+            {credits !== null && (
+              <div className="mt-4 pt-4 border-t border-white/5 flex justify-between items-center text-xs text-gray-500">
+                <span>
+                  💳 Credits remaining:{" "}
+                  <span className="text-white font-medium">{credits}</span>
+                </span>
+                <span>
+                  Will use:{" "}
+                  <span className="text-yellow-400 font-medium">
+                    {leadsCount} credits so far
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Completed - redirecting */}
         {status === "completed" && (
           <div className="max-w-2xl mx-auto mb-8 bg-green-500/10 border border-green-500/30 rounded-2xl p-6 text-center">
             <div className="text-4xl mb-3">🎉</div>
             <p className="text-green-400 font-semibold text-lg mb-1">
               Scraping Complete!
             </p>
-            <p className="text-gray-400 text-sm">
+            <p className="text-gray-400 text-sm mb-4">
               {leadsCount} leads found — redirecting to leads page...
             </p>
+            {/* Credits summary */}
+            <div className="bg-[#0f1221]/80 rounded-xl p-3 flex justify-between items-center text-sm">
+              <span className="text-gray-400">💳 Credits used:</span>
+              <span className="text-red-400 font-bold">
+                -{creditsUsed || leadsCount}
+              </span>
+            </div>
+            {credits !== null && (
+              <div className="bg-[#0f1221]/80 rounded-xl p-3 flex justify-between items-center text-sm mt-2">
+                <span className="text-gray-400">💳 Remaining balance:</span>
+                <span
+                  className={`font-bold ${credits < 50 ? "text-red-400" : credits < 150 ? "text-yellow-400" : "text-green-400"}`}
+                >
+                  {credits} credits
+                </span>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Cancelled */}
         {status === "cancelled" && (
           <div className="max-w-2xl mx-auto mb-8 bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-6 text-center">
             <div className="text-4xl mb-3">⛔</div>
@@ -270,14 +348,16 @@ export default function JobProgress() {
           </div>
         )}
 
-        {/* Failed */}
         {status === "failed" && (
           <div className="max-w-2xl mx-auto mb-8 bg-red-500/10 border border-red-500/30 rounded-2xl p-6 text-center">
             <div className="text-4xl mb-3">❌</div>
             <p className="text-red-400 font-semibold text-lg mb-1">
               Job Failed
             </p>
-            <div className="flex gap-3 justify-center mt-4">
+            <p className="text-gray-400 text-sm mb-4">
+              Scraping encountered an error. Please try again.
+            </p>
+            <div className="flex gap-3 justify-center mt-2">
               <button
                 onClick={() => navigate("/create-job")}
                 className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-xl transition"
